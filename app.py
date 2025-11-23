@@ -57,7 +57,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. FUNCTIONS (FIXED INDENTATION)
+# 1. FUNCTIONS
 # ==========================================
 def load_json(path):
     if not os.path.exists(path):
@@ -164,22 +164,53 @@ def parse_srt(content):
 # ==========================================
 # 2. MAIN APP
 # ==========================================
-# ADMIN CHECK
+# --- ADMIN PANEL (FIXED LOGIN) ---
 if st.query_params.get("view") == "admin":
     st.title("🔐 Admin Panel")
-    pwd = st.text_input("Password", type="password")
-    if pwd == "admin123":
-        days = st.number_input("Days", 30)
-        if st.button("Generate Key"):
-            k = "KHM-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-            db = load_json(KEYS_FILE)
-            db[k] = {"duration_days": days, "activated_date": None, "status": "active"}
-            save_json(KEYS_FILE, db)
-            st.success(f"Key: {k}")
-        st.json(load_json(KEYS_FILE))
+    
+    # Session State for Admin Login
+    if 'admin_auth' not in st.session_state:
+        st.session_state.admin_auth = False
+
+    if not st.session_state.admin_auth:
+        pwd = st.text_input("Password", type="password")
+        if st.button("Login Admin"):
+            if pwd == "admin123":
+                st.session_state.admin_auth = True
+                st.rerun()
+            else:
+                st.error("Password មិនត្រឹមត្រូវ!")
+        
+        st.markdown("---")
+        if st.button("⬅️ ត្រឡប់ទៅ User App"):
+            st.query_params.clear()
+            st.rerun()
+        st.stop()
+
+    # Admin Interface (Logged In)
+    with st.sidebar:
+        if st.button("Logout Admin"):
+            st.session_state.admin_auth = False
+            st.rerun()
+        if st.button("Go to User App"):
+            st.query_params.clear()
+            st.rerun()
+
+    days = st.number_input("សុពលភាព (ថ្ងៃ)", 30)
+    if st.button("➕ បង្កើត Key ថ្មី (Create Key)"):
+        k = "KHM-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        db = load_json(KEYS_FILE)
+        db[k] = {"duration_days": days, "activated_date": None, "status": "active"}
+        save_json(KEYS_FILE, db)
+        st.success(f"Key ថ្មី៖ `{k}`")
+        st.info("សូម Copy Key នេះទុក!")
+
+    st.divider()
+    st.subheader("បញ្ជី Key ទាំងអស់")
+    st.json(load_json(KEYS_FILE))
     st.stop()
 
-# APP HEADER
+# --- USER APP ---
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
 cm = get_cookie_manager()
 
@@ -195,8 +226,9 @@ if 'auth' not in st.session_state:
             st.session_state.days = d
 
 if not st.session_state.auth:
+    st.info("សូមវាយបញ្ចូល Key ដើម្បីប្រើប្រាស់")
     key = st.text_input("🔑 Access Key", type="password")
-    if st.button("Login"):
+    if st.button("Login", type="primary"):
         s, d = check_access_key(key)
         if s == "Valid":
             st.session_state.auth = True
@@ -206,6 +238,11 @@ if not st.session_state.auth:
             st.rerun()
         else:
             st.error(s)
+    
+    st.markdown("---")
+    if st.button("🔐 ចូល Admin (Create Key)"):
+        st.query_params["view"] = "admin"
+        st.rerun()
     st.stop()
 
 # VOICE MAP
@@ -244,8 +281,8 @@ with st.sidebar:
     st.session_state.g_pitch = p_sel
 
     st.divider()
-    st.subheader("💾 6 Presets (Save/Load)")
-    preset_name_input = st.text_input("Preset Name (Short)", placeholder="Ex: Boy")
+    st.subheader("💾 6 Presets")
+    preset_name_input = st.text_input("Preset Name", placeholder="Ex: Boy")
     
     for i in range(1, 7):
         c1, c2 = st.columns([3, 1])
