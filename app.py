@@ -226,7 +226,7 @@ def parse_srt(content):
 # ==========================================
 # 2. MAIN APP UI
 # ==========================================
-# ADMIN
+# ADMIN (access by link only: ?view=admin)
 if st.query_params.get("view") == "admin":
     st.title("🔐 Admin Panel")
     pwd = st.text_input("Password", type="password")
@@ -282,9 +282,8 @@ if not st.session_state.auth:
                 st.error(s)
     
     st.markdown("---")
-    if st.button("🔐 Admin Login"):
-        st.query_params["view"] = "admin"
-        st.rerun()
+    # ❌ Admin Login button removed (use ?view=admin)
+    st.info("For admin: open URL with `?view=admin` (example: http://localhost:8501/?view=admin)")
     st.stop()
 
 # VOICES
