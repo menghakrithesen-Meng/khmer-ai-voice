@@ -22,13 +22,13 @@ st.set_page_config(page_title="Khmer AI Voice Pro", page_icon="🎙️", layout=
 KEYS_FILE = "web_keys.json"
 PRESETS_FILE = "user_presets.json"
 
-# 🎨 CUSTOM CSS (UI IMPROVEMENTS)
+# 🎨 CUSTOM CSS
 st.markdown("""
 <style>
     .stApp { background: linear-gradient(to right, #0f172a, #1e293b); color: white; }
     section[data-testid="stSidebar"] { background-color: #111827; border-right: 1px solid #374151; }
     
-    /* Hide Number Input Steppers (+ - buttons) */
+    /* Hide Number Input Steppers */
     button[data-testid="stNumberInputStepDown"], button[data-testid="stNumberInputStepUp"] {
         display: none;
     }
@@ -36,7 +36,7 @@ st.markdown("""
         text-align: center;
     }
 
-    /* Small Preset Buttons in SRT Row */
+    /* Small Preset Buttons */
     div[data-testid="column"] button {
         padding: 0px 2px !important;
         font-size: 11px !important;
@@ -47,7 +47,7 @@ st.markdown("""
         text-overflow: ellipsis;
     }
     
-    /* SRT Box Style */
+    /* SRT Box */
     .srt-box { 
         background: #1e293b; border: 1px solid #334155; 
         border-radius: 6px; padding: 10px; margin-bottom: 5px; 
@@ -57,27 +57,37 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. FUNCTIONS
+# 1. FUNCTIONS (FIXED INDENTATION)
 # ==========================================
 def load_json(path):
-    if not os.path.exists(path): return {}
-    try: with open(path, "r") as f: return json.load(f)
-    except: return {}
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r") as f:
+            return json.load(f)
+    except:
+        return {}
 
 def save_json(path, data):
-    try: with open(path, "w") as f: json.dump(data, f, indent=2)
-    except: pass
+    try:
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+    except:
+        pass
 
 def get_cookie_manager():
-    if 'cookie_manager' not in st.session_state: st.session_state.cookie_manager = stx.CookieManager()
+    if 'cookie_manager' not in st.session_state:
+        st.session_state.cookie_manager = stx.CookieManager()
     return st.session_state.cookie_manager
 
 # --- AUTH ---
 def check_access_key(user_key):
     keys_db = load_json(KEYS_FILE)
-    if user_key not in keys_db: return "Invalid Key", 0
+    if user_key not in keys_db:
+        return "Invalid Key", 0
     k_data = keys_db[user_key]
-    if k_data["status"] != "active": return "Key Disabled", 0
+    if k_data["status"] != "active":
+        return "Key Disabled", 0
     
     if not k_data.get("activated_date"):
         k_data["activated_date"] = str(datetime.date.today())
@@ -86,13 +96,16 @@ def check_access_key(user_key):
     start = datetime.date.fromisoformat(k_data["activated_date"])
     exp = start + datetime.timedelta(days=k_data["duration_days"])
     left = (exp - datetime.date.today()).days
-    if left < 0: return "Expired", 0
+    
+    if left < 0:
+        return "Expired", 0
     return "Valid", left
 
 # --- PRESETS ---
 def save_user_preset(user_key, slot, data, name):
     db = load_json(PRESETS_FILE)
-    if user_key not in db: db[user_key] = {}
+    if user_key not in db:
+        db[user_key] = {}
     data['name'] = name if name else f"{slot}"
     db[user_key][str(slot)] = data
     save_json(PRESETS_FILE, db)
@@ -115,7 +128,8 @@ def process_audio(file_path, pad_ms):
         seg = AudioSegment.from_file(file_path)
         pad = AudioSegment.silent(duration=pad_ms)
         return pad + effects.normalize(seg) + pad
-    except: return AudioSegment.from_file(file_path)
+    except:
+        return AudioSegment.from_file(file_path)
 
 # --- SRT PARSER ---
 def srt_time_to_ms(time_str):
@@ -124,7 +138,8 @@ def srt_time_to_ms(time_str):
         h,m,s = start.replace(',', '.').split(':')
         start_ms = int(float(h)*3600000 + float(m)*60000 + float(s)*1000)
         return start_ms
-    except: return 0
+    except:
+        return 0
 
 def parse_srt(content):
     subs = []
@@ -132,10 +147,8 @@ def parse_srt(content):
     for b in blocks:
         lines = b.strip().split('\n')
         if len(lines) >= 3:
-            # Try to find the timestamp line
             time_idx = 1
             if '-->' not in lines[1]:
-                # Sometimes index is missing or extra lines
                 for i, l in enumerate(lines):
                     if '-->' in l: 
                         time_idx = i
@@ -143,7 +156,7 @@ def parse_srt(content):
             
             start_ms = srt_time_to_ms(lines[time_idx])
             text = " ".join(lines[time_idx+1:])
-            text = re.sub(r'<[^>]+>', '', text) # Remove HTML tags
+            text = re.sub(r'<[^>]+>', '', text)
             
             subs.append({"start": start_ms, "text": text})
     return subs
@@ -175,17 +188,23 @@ if 'auth' not in st.session_state:
     ck = cm.get("auth_key")
     if ck:
         s, d = check_access_key(ck)
-        if s == "Valid": st.session_state.auth = True; st.session_state.ukey = ck; st.session_state.days = d
+        if s == "Valid":
+            st.session_state.auth = True
+            st.session_state.ukey = ck
+            st.session_state.days = d
 
 if not st.session_state.auth:
     key = st.text_input("🔑 Access Key", type="password")
     if st.button("Login"):
         s, d = check_access_key(key)
         if s == "Valid":
-            st.session_state.auth = True; st.session_state.ukey = key; st.session_state.days = d
+            st.session_state.auth = True
+            st.session_state.ukey = key
+            st.session_state.days = d
             cm.set("auth_key", key, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
             st.rerun()
-        else: st.error(s)
+        else:
+            st.error(s)
     st.stop()
 
 # VOICE MAP
@@ -199,14 +218,20 @@ VOICES = {
 # --- SIDEBAR ---
 with st.sidebar:
     st.success(f"✅ Active: {st.session_state.days} Days")
-    if st.button("Logout"): cm.delete("auth_key"); st.session_state.clear(); st.rerun()
+    if st.button("Logout"):
+        cm.delete("auth_key")
+        st.session_state.clear()
+        st.rerun()
     
     st.divider()
     st.subheader("⚙️ Global Settings")
     
-    if "g_voice" not in st.session_state: st.session_state.g_voice = "Sreymom (Khmer)"
-    if "g_rate" not in st.session_state: st.session_state.g_rate = 0
-    if "g_pitch" not in st.session_state: st.session_state.g_pitch = 0
+    if "g_voice" not in st.session_state:
+        st.session_state.g_voice = "Sreymom (Khmer)"
+    if "g_rate" not in st.session_state:
+        st.session_state.g_rate = 0
+    if "g_pitch" not in st.session_state:
+        st.session_state.g_pitch = 0
     
     v_sel = st.selectbox("Voice", list(VOICES.keys()), index=list(VOICES.keys()).index(st.session_state.g_voice))
     r_sel = st.slider("Speed", -50, 50, value=st.session_state.g_rate)
@@ -259,7 +284,8 @@ with tab1:
                     final.export(buf, format="mp3")
                     st.audio(buf)
                     st.download_button("Download MP3", buf, "audio.mp3", "audio/mp3")
-                except Exception as e: st.error(f"Error: {e}")
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
 # 2. SRT MULTI-SPEAKER
 with tab2:
@@ -300,10 +326,10 @@ with tab2:
                         p_data = get_user_preset(st.session_state.ukey, slot_id)
                         # Show NAME if exists, else Number
                         btn_label = p_data['name'] if p_data and p_data.get('name') else str(slot_id)
-                        # Limit Text Length on button
+                        # Limit Text Length
                         if len(btn_label) > 4: btn_label = btn_label[:4]
                         
-                        if cols[slot_id-1].button(btn_label, key=f"btn_{idx}_{slot_id}", help=f"Apply Preset: {btn_label}"):
+                        if cols[slot_id-1].button(btn_label, key=f"btn_{idx}_{slot_id}", help=f"Apply: {btn_label}"):
                             if p_data:
                                 st.session_state.line_settings[idx] = {
                                     "voice": p_data['voice'],
@@ -316,9 +342,8 @@ with tab2:
             progress = st.progress(0)
             status = st.empty()
             
-            # Start with silent audio
             final_mix = AudioSegment.silent(duration=0)
-            current_timeline = 0 # Track where we are in the audio file
+            current_timeline = 0
             
             try:
                 loop = asyncio.new_event_loop()
@@ -328,20 +353,16 @@ with tab2:
                     status.text(f"Processing line {i+1}/{len(st.session_state.srt_lines)}...")
                     s = st.session_state.line_settings[i]
                     
-                    # 1. Generate Audio Clip
                     raw_path = loop.run_until_complete(gen_edge(sub['text'], VOICES[s['voice']], s['rate'], s['pitch']))
                     clip = AudioSegment.from_file(raw_path)
                     
-                    # 2. SYNC LOGIC: Calculate Gap
+                    # SYNC LOGIC
                     target_start = sub['start']
-                    
-                    # If text starts LATER than current audio position -> Add Silence
                     if target_start > current_timeline:
                         silence_gap = target_start - current_timeline
                         final_mix += AudioSegment.silent(duration=silence_gap)
                         current_timeline += silence_gap
                     
-                    # Append Audio
                     final_mix += clip
                     current_timeline += len(clip)
                     
