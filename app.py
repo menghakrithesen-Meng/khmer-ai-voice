@@ -56,9 +56,31 @@ st.markdown("""
 
     /* SRT Box */
     .srt-box { 
-        background: #1e293b; border: 1px solid #334155; 
-        border-radius: 6px; padding: 10px; margin-bottom: 5px; 
+        background: #1e293b; 
+        border: 1px solid #334155; 
+        border-radius: 6px; 
+        padding: 10px; 
+        margin-bottom: 5px; 
         border-left: 4px solid #8b5cf6; 
+    }
+
+    /* 🎨 Color per Preset Slot */
+    .srt-box.slot-1 { border-left-color: #f97316 !important; }  /* orange */
+    .srt-box.slot-2 { border-left-color: #22c55e !important; }  /* green */
+    .srt-box.slot-3 { border-left-color: #3b82f6 !important; }  /* blue */
+    .srt-box.slot-4 { border-left-color: #e11d48 !important; }  /* rose */
+    .srt-box.slot-5 { border-left-color: #a855f7 !important; }  /* purple */
+    .srt-box.slot-6 { border-left-color: #facc15 !important; }  /* yellow */
+
+    /* Preset label pill */
+    .preset-tag {
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 999px;
+        font-size: 11px;
+        background: #4b5563;
+        margin-left: 6px;
+        color: #e5e7eb;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -302,19 +324,17 @@ with tab1:
                     st.error(f"Error: {e}")
 
 # 2. SRT MULTI-SPEAKER
-# 2. SRT MULTI-SPEAKER
 with tab2:
     st.info("SRT Mode: Adjust voice for each line. Audio will sync to SRT time.")
     srt_file = st.file_uploader("Upload SRT", type="srt", key="srt_up")
     
     if srt_file:
-        # INIT SRT STATE (ដដែល)
+        # INIT SRT STATE
         if "srt_lines" not in st.session_state or st.session_state.get("last_srt") != srt_file.name:
             content = srt_file.getvalue().decode("utf-8")
             st.session_state.srt_lines = parse_srt(content)
             st.session_state.last_srt = srt_file.name
             st.session_state.line_settings = []
-            # Default: Use Global Settings
             for _ in st.session_state.srt_lines:
                 st.session_state.line_settings.append({
                     "voice": st.session_state.g_voice,
@@ -323,9 +343,7 @@ with tab2:
                     "active_slot": None
                 })
 
-        # ===============================
-        # 🎭 SRT DEFAULT PRESET (NEW)
-        # ===============================
+        # 🎭 SRT DEFAULT PRESET
         st.markdown("#### 🎭 SRT Default Preset")
 
         preset_options = ["-- No Preset --"]
@@ -346,7 +364,6 @@ with tab2:
         if st.button("Apply preset to all lines"):
             if srt_default_preset in preset_map:
                 slot_id, pd = preset_map[srt_default_preset]
-                # អាប់ដេត setting របស់ SRT ឲ្យដូច preset
                 for idx in range(len(st.session_state.srt_lines)):
                     st.session_state.line_settings[idx] = {
                         "voice": pd['voice'],
@@ -359,19 +376,35 @@ with tab2:
             else:
                 st.warning("Please select a valid preset before applying.")
 
-        # ===============================
-        # SRT LINE EDITOR (ដដែល តែបន្តខាងក្រោម)
-        # ===============================
+        # SRT LINE EDITOR
         with st.container(height=600):
             for idx, sub in enumerate(st.session_state.srt_lines):
+                cur = st.session_state.line_settings[idx]
+                active_slot = cur.get('active_slot')
+
+                # CSS class for color
+                slot_class = f" slot-{active_slot}" if active_slot else ""
+
+                # Preset label
+                if active_slot:
+                    pd = get_user_preset(st.session_state.ukey, active_slot)
+                    preset_name = pd['name'] if pd and pd.get('name') else f"Slot {active_slot}"
+                    preset_html = f"<span class='preset-tag'>Preset: {preset_name}</span>"
+                else:
+                    preset_html = ""
+
                 st.markdown(
-                    f"<div class='srt-box'><b>#{idx+1}</b> "
-                    f"<small>Time: {sub['start']}ms</small><br>{sub['text']}</div>",
+                    f"""
+                    <div class='srt-box{slot_class}'>
+                        <b>#{idx+1}</b> 
+                        <small>Time: {sub['start']}ms</small>
+                        {preset_html}<br>{sub['text']}
+                    </div>
+                    """,
                     unsafe_allow_html=True
                 )
                 
                 c_voice, c_rate, c_pitch, c_presets = st.columns([2, 1, 1, 4])
-                cur = st.session_state.line_settings[idx]
                 
                 # Controls
                 new_v = c_voice.selectbox(
@@ -391,7 +424,6 @@ with tab2:
                 )
                 
                 # Detect Manual Change
-                active_slot = cur.get('active_slot')
                 if new_v != cur['voice'] or new_r != cur['rate'] or new_p != cur['pitch']:
                     active_slot = None
                 
@@ -403,7 +435,7 @@ with tab2:
                     "active_slot": active_slot
                 }
 
-                # Preset Buttons (ដដែល តែ clean)
+                # Preset Buttons
                 with c_presets:
                     cols = st.columns(6)
                     for slot_id in range(1, 7):
@@ -428,9 +460,7 @@ with tab2:
                                 }
                                 st.rerun()
 
-        # ===============================
-        # GENERATE FULL AUDIO (ដូចចាស់)
-        # ===============================
+        # GENERATE FULL AUDIO
         if st.button("🚀 Generate Full Audio (Strict Sync)", type="primary"):
             progress = st.progress(0)
             status = st.empty()
@@ -472,8 +502,7 @@ with tab2:
             except Exception as e:
                 st.error(f"Error: {e}")
 
-
+# TAB 3
 with tab3:
     st.subheader("Gemini Translator (SRT)")
     st.info("Coming Soon...")
-
