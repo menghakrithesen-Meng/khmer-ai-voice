@@ -64,7 +64,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. FUNCTIONS (FULLY EXPANDED SYNTAX)
+# 1. FUNCTIONS
 # ==========================================
 def load_json(path):
     if not os.path.exists(path):
@@ -92,7 +92,6 @@ def check_access_key(user_key):
     keys_db = load_json(KEYS_FILE)
     if user_key not in keys_db:
         return "Invalid Key", 0
-    
     k_data = keys_db[user_key]
     if k_data["status"] != "active":
         return "Key Disabled", 0
@@ -313,6 +312,7 @@ with tab2:
             st.session_state.srt_lines = parse_srt(content)
             st.session_state.last_srt = srt_file.name
             st.session_state.line_settings = []
+            # Default: Use Global Settings
             for _ in st.session_state.srt_lines:
                 st.session_state.line_settings.append({
                     "voice": st.session_state.g_voice,
@@ -323,35 +323,40 @@ with tab2:
 
         with st.container(height=600):
             for idx, sub in enumerate(st.session_state.srt_lines):
-                st.markdown(f"<div class='srt-box'><b>#{idx+1}</b> <small>Start: {sub['start']}ms</small><br>{sub['text']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='srt-box'><b>#{idx+1}</b> <small>Time: {sub['start']}ms</small><br>{sub['text']}</div>", unsafe_allow_html=True)
                 
                 c_voice, c_rate, c_pitch, c_presets = st.columns([2, 1, 1, 4])
-                k_v, k_r, k_p = f"v_{idx}", f"r_{idx}", f"p_{idx}"
-                current_s = st.session_state.line_settings[idx]
+                cur = st.session_state.line_settings[idx]
                 
-                new_v = c_voice.selectbox("Voice", list(VOICES.keys()), index=list(VOICES.keys()).index(current_s['voice']), key=k_v, label_visibility="collapsed")
-                new_r = c_rate.number_input("Rate", -50, 50, value=current_s['rate'], key=k_r, label_visibility="collapsed")
-                new_p = c_pitch.number_input("Pitch", -50, 50, value=current_s['pitch'], key=k_p, label_visibility="collapsed")
+                # Controls
+                new_v = c_voice.selectbox("V", list(VOICES.keys()), index=list(VOICES.keys()).index(cur['voice']), key=f"v_{idx}", label_visibility="collapsed")
+                new_r = c_rate.number_input("R", -50, 50, value=cur['rate'], key=f"r_{idx}", label_visibility="collapsed")
+                new_p = c_pitch.number_input("P", -50, 50, value=cur['pitch'], key=f"p_{idx}", label_visibility="collapsed")
                 
-                # Manual Change -> Reset active slot
-                active = current_s.get('active_slot')
-                if new_v != current_s['voice'] or new_r != current_s['rate'] or new_p != current_s['pitch']:
-                    active = None
+                # Detect Manual Change
+                active_slot = cur.get('active_slot')
+                if new_v != cur['voice'] or new_r != cur['rate'] or new_p != cur['pitch']:
+                    active_slot = None
                 
-                st.session_state.line_settings[idx] = {"voice": new_v, "rate": new_r, "pitch": new_p, "active_slot": active}
+                # Save State
+                st.session_state.line_settings[idx] = {"voice": new_v, "rate": new_r, "pitch": new_p, "active_slot": active_slot}
 
                 # Preset Buttons
                 with c_presets:
                     cols = st.columns(6)
                     for slot_id in range(1, 7):
                         pd = get_user_preset(st.session_state.ukey, slot_id)
-                        label = pd['name'] if pd and pd.get('name') else str(slot_id)
-                        if len(label) > 4: label = label[:4]
                         
-                        # Color logic: Primary if active
-                        b_type = "primary" if active == slot_id else "secondary"
+                        # FIX HERE: Correctly define btn_label
+                        full_name = pd['name'] if pd and pd.get('name') else str(slot_id)
+                        btn_label = full_name
+                        if len(btn_label) > 4: btn_label = btn_label[:4]
                         
-                        if cols[slot_id-1].button(label, key=f"btn_{idx}_{slot_id}", type=b_type, help=f"Apply: {btn_label}"):
+                        # Color logic
+                        b_type = "primary" if active_slot == slot_id else "secondary"
+                        
+                        # FIX HERE: Removed undefined 'btn_label' in help string
+                        if cols[slot_id-1].button(btn_label, key=f"btn_{idx}_{slot_id}", type=b_type, help=f"Apply: {full_name}"):
                             if pd:
                                 st.session_state.line_settings[idx] = {
                                     "voice": pd['voice'],
@@ -361,7 +366,7 @@ with tab2:
                                 }
                                 st.rerun()
 
-        if st.button("🚀 Generate Full Conversation (Synced)", type="primary"):
+        if st.button("🚀 Generate Full Audio (Strict Sync)", type="primary"):
             progress = st.progress(0)
             status = st.empty()
             
