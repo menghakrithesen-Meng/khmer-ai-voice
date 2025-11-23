@@ -93,14 +93,14 @@ def load_json(path):
     try:
         with open(path, "r") as f:
             return json.load(f)
-    except:
+    except Exception:
         return {}
 
 def save_json(path, data):
     try:
         with open(path, "w") as f:
             json.dump(data, f, indent=2)
-    except:
+    except Exception:
         pass
 
 def get_cookie_manager():
@@ -142,7 +142,7 @@ def get_user_preset(user_key, slot):
     db = load_json(PRESETS_FILE)
     return db.get(user_key, {}).get(str(slot), None)
 
-# Apply preset to one SRT line
+# 🔧 Apply preset to one SRT line (voice + rate + pitch + remember slot)
 def apply_preset_to_line(user_key, line_index, slot_id):
     pd = get_user_preset(user_key, slot_id)
     if not pd:
@@ -151,6 +151,7 @@ def apply_preset_to_line(user_key, line_index, slot_id):
         "voice": pd["voice"],
         "rate": pd["rate"],
         "pitch": pd["pitch"],
+        "slot": slot_id,   # remember which preset slot
     }
 
 # --- AUDIO ENGINE ---
@@ -168,17 +169,17 @@ def process_audio(file_path, pad_ms):
         seg = AudioSegment.from_file(file_path)
         pad = AudioSegment.silent(duration=pad_ms)
         return pad + effects.normalize(seg) + pad
-    except:
+    except Exception:
         return AudioSegment.from_file(file_path)
 
 # --- SRT PARSER ---
 def srt_time_to_ms(time_str):
     try:
         start, end = time_str.split(' --> ')
-        h,m,s = start.replace(',', '.').split(':')
-        start_ms = int(float(h)*3600000 + float(m)*60000 + float(s)*1000)
+        h, m, s = start.replace(',', '.').split(':')
+        start_ms = int(float(h) * 3600000 + float(m) * 60000 + float(s) * 1000)
         return start_ms
-    except:
+    except Exception:
         return 0
 
 def parse_srt(content):
@@ -190,14 +191,12 @@ def parse_srt(content):
             time_idx = 1
             if '-->' not in lines[1]:
                 for i, l in enumerate(lines):
-                    if '-->' in l: 
+                    if '-->' in l:
                         time_idx = i
                         break
-            
             start_ms = srt_time_to_ms(lines[time_idx])
             text = " ".join(lines[time_idx+1:])
             text = re.sub(r'<[^>]+>', '', text)
-            
             if text.strip():
                 subs.append({"start": start_ms, "text": text})
     return subs
@@ -351,6 +350,7 @@ with tab2:
                     "voice": st.session_state.g_voice,
                     "rate": st.session_state.g_rate,
                     "pitch": st.session_state.g_pitch,
+                    "slot": None,   # no preset used yet
                 })
 
         # 🎭 SRT DEFAULT PRESET (APPLY TO ALL)
@@ -381,29 +381,18 @@ with tab2:
             else:
                 st.warning("Please select a valid preset before applying.")
 
-        # SRT LINE EDITOR (with per-line presets)
+        # SRT LINE EDITOR (per-line preset + color)
         with st.container(height=600):
             for idx, sub in enumerate(st.session_state.srt_lines):
                 cur = st.session_state.line_settings[idx]
+                slot = cur.get("slot")
 
-                # Detect active_slot by matching V/R/P to presets
-                active_slot = None
-                active_name = None
-                for slot_id in range(1, 7):
-                    pd = get_user_preset(st.session_state.ukey, slot_id)
-                    if not pd:
-                        continue
-                    if (pd["voice"] == cur["voice"] and
-                        pd["rate"]  == cur["rate"]  and
-                        pd["pitch"] == cur["pitch"]):
-                        active_slot = slot_id
-                        active_name = pd.get("name", f"Slot {slot_id}")
-                        break
-
-                # CSS class + label
-                slot_class = f" slot-{active_slot}" if active_slot else ""
-                if active_slot:
-                    preset_html = f"<span class='preset-tag'>Preset: {active_name}</span>"
+                # Border color & label follow "slot"
+                slot_class = f" slot-{slot}" if slot else ""
+                if slot:
+                    pd = get_user_preset(st.session_state.ukey, slot)
+                    preset_name = pd['name'] if (pd and pd.get('name')) else f"Slot {slot}"
+                    preset_html = f"<span class='preset-tag'>Preset: {preset_name}</span>"
                 else:
                     preset_html = ""
 
@@ -420,7 +409,7 @@ with tab2:
 
                 c_voice, c_rate, c_pitch, c_presets = st.columns([2, 1, 1, 4])
 
-                # Controls (V/R/P) from current state
+                # Controls (start from current state)
                 new_v = c_voice.selectbox(
                     "V", 
                     list(VOICES.keys()), 
@@ -437,11 +426,12 @@ with tab2:
                     label_visibility="collapsed"
                 )
 
-                # Update state with manual changes
+                # Manual change → update voice/rate/pitch BUT keep same slot (color not lost)
                 st.session_state.line_settings[idx] = {
                     "voice": new_v,
                     "rate": new_r,
                     "pitch": new_p,
+                    "slot": slot,
                 }
 
                 # Preset Buttons per line
@@ -455,7 +445,7 @@ with tab2:
                             full_name = "-"
 
                         btn_label = full_name if len(full_name) <= 4 else full_name[:4]
-                        b_type = "primary" if active_slot == slot_id else "secondary"
+                        b_type = "primary" if slot == slot_id else "secondary"
 
                         if cols[slot_id-1].button(
                             btn_label,
@@ -464,6 +454,7 @@ with tab2:
                             help=f"Apply: {full_name}"
                         ):
                             if pd:
+                                # Apply preset (voice/rate/pitch + slot) to this line
                                 apply_preset_to_line(st.session_state.ukey, idx, slot_id)
                                 st.rerun()
 
@@ -496,7 +487,7 @@ with tab2:
                     
                     try:
                         os.remove(raw_path)
-                    except:
+                    except OSError:
                         pass
                     progress.progress((i+1)/len(st.session_state.srt_lines))
                 
