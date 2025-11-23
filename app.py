@@ -11,8 +11,6 @@ import string
 import random
 import io
 import re
-import uuid
-import extra_streamlit_components as stx
 
 # ==========================================
 # 0. CONFIG & SETUP
@@ -21,7 +19,7 @@ st.set_page_config(page_title="Khmer AI Voice Pro", page_icon="🎙️", layout=
 
 KEYS_FILE = "web_keys.json"
 PRESETS_FILE = "user_presets.json"
-ACTIVE_FILE = "active_sessions.json"  # ⭐ key -> active client_id
+ACTIVE_FILE = "active_sessions.json"  # key -> True (กำลังใช้งาน)
 
 # 🎨 CUSTOM CSS
 st.markdown("""
@@ -51,7 +49,7 @@ st.markdown("""
     /* Active Button Color */
     div[data-testid="column"] button[kind="primary"] {
         border-color: #ff4b4b !important;
-        background-color: #ff4b4b !important;
+        background-color: #ff4b4b !ាន្រាំត្រ៏!Important;
         color: white !important;
     }
 
@@ -87,7 +85,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. UTILS
+# 1. UTILS (JSON, AUTH, PRESETS, AUDIO, SRT)
 # ==========================================
 def load_json(path):
     if not os.path.exists(path):
@@ -105,21 +103,7 @@ def save_json(path, data):
     except Exception:
         pass
 
-def get_cookie_manager():
-    if 'cookie_manager' not in st.session_state:
-        st.session_state.cookie_manager = stx.CookieManager()
-    return st.session_state.cookie_manager
-
-def get_or_create_client_id(cm):
-    """
-    ១ Browser = ១ client_id (រក្សាទុកក្នុង cookie "client_id")
-    """
-    cid = cm.get("client_id")
-    if not cid:
-        cid = str(uuid.uuid4())
-        cm.set("client_id", cid)  # persistent cookie
-    return cid
-
+# ---------- ACTIVE SESSIONS ----------
 def load_active_sessions():
     data = load_json(ACTIVE_FILE)
     if isinstance(data, dict):
@@ -129,7 +113,6 @@ def load_active_sessions():
 def save_active_sessions(data):
     save_json(ACTIVE_FILE, data)
 
-# --- AUTH CHECK (lifetime only) ---
 def check_access_key_lifetime(user_key):
     keys_db = load_json(KEYS_FILE)
     if user_key not in keys_db:
@@ -150,37 +133,30 @@ def check_access_key_lifetime(user_key):
         return "Expired", 0
     return "Valid", left
 
-# --- LOGIN WITH SINGLE ACTIVE BROWSER ---
-def try_login(user_key, client_id):
+def try_login(user_key):
     """
-    Return (status, days_left)
-    Status:
-      - "Valid"  -> login allowed (and active_sessions updated)
-      - other    -> error string
+    ១ key ប្រើបានតែ ១ session ក្នុងពេលតែមួយ
     """
     status, days = check_access_key_lifetime(user_key)
     if status != "Valid":
         return status, days
 
     active = load_active_sessions()
-    current = active.get(user_key)
+    if user_key in active:
+        # key កំពុងប្រើរួចហើយ នៅ session ផ្សេង
+        return "Key already in use", days
 
-    # key not active yet OR already active on this same client_id
-    if current is None or current == client_id:
-        active[user_key] = client_id
-        save_active_sessions(active)
-        return "Valid", days
+    active[user_key] = True
+    save_active_sessions(active)
+    return "Valid", days
 
-    # active somewhere else
-    return "Key already in use", days
-
-def logout_key(user_key, client_id):
+def logout_key(user_key):
     active = load_active_sessions()
-    if active.get(user_key) == client_id:
+    if user_key in active:
         del active[user_key]
         save_active_sessions(active)
 
-# --- PRESETS ---
+# ---------- PRESETS ----------
 def save_user_preset(user_key, slot, data, name):
     db = load_json(PRESETS_FILE)
     if user_key not in db:
@@ -193,7 +169,6 @@ def get_user_preset(user_key, slot):
     db = load_json(PRESETS_FILE)
     return db.get(user_key, {}).get(str(slot), None)
 
-# 🔧 Apply preset to one SRT line
 def apply_preset_to_line(user_key, line_index, slot_id):
     pd = get_user_preset(user_key, slot_id)
     if not pd:
@@ -202,10 +177,10 @@ def apply_preset_to_line(user_key, line_index, slot_id):
         "voice": pd["voice"],
         "rate": pd["rate"],
         "pitch": pd["pitch"],
-        "slot": slot_id,   # for color & label
+        "slot": slot_id,
     }
 
-# --- AUDIO ENGINE ---
+# ---------- AUDIO ENGINE ----------
 async def gen_edge(text, voice, rate, pitch):
     file_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3").name
     rate_str = f"{rate:+d}%" if rate != 0 else "+0%"
@@ -222,7 +197,7 @@ def process_audio(file_path, pad_ms):
     except Exception:
         return AudioSegment.from_file(file_path)
 
-# --- SRT PARSER ---
+# ---------- SRT PARSER ----------
 def srt_time_to_ms(time_str):
     try:
         start, end = time_str.split(' --> ')
@@ -252,7 +227,7 @@ def parse_srt(content):
     return subs
 
 # ==========================================
-# 2. ADMIN (via ?view=admin)
+# 2. ADMIN PANEL (?view=admin)
 # ==========================================
 if st.query_params.get("view") == "admin":
     st.title("🔐 Admin Panel")
@@ -269,50 +244,47 @@ if st.query_params.get("view") == "admin":
     st.stop()
 
 # ==========================================
-# 3. AUTH FLOW
+# 3. AUTH FLOW (URL ?key= + Manual Login)
 # ==========================================
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
-cm = get_cookie_manager()
-client_id = get_or_create_client_id(cm)
 
 if 'auth' not in st.session_state:
     st.session_state.auth = False
 
-# 3.1 AUTO-LOGIN BY COOKIE (remember key in this browser)
+# 3.1 AUTO-LOGIN BY URL PARAM ?key=YOUR_KEY
 if not st.session_state.auth:
-    ck = cm.get("auth_key")
-    if ck:
-        status, days = try_login(ck, client_id)
+    qp_key = st.query_params.get("key")
+    if qp_key:
+        status, days = try_login(qp_key)
         if status == "Valid":
             st.session_state.auth = True
-            st.session_state.ukey = ck
+            st.session_state.ukey = qp_key
             st.session_state.days = days
+        else:
+            st.error(status)
 
 # 3.2 SHOW LOGIN FORM IF STILL NOT AUTH
 if not st.session_state.auth:
     key = st.text_input("🔑 Access Key", type="password")
     if st.button("Login"):
-        status, days = try_login(key, client_id)
+        status, days = try_login(key)
         if status == "Valid":
             st.session_state.auth = True
             st.session_state.ukey = key
             st.session_state.days = days
-            # remember on this browser 30 days
-            cm.set(
-                "auth_key",
-                key,
-                expires_at=datetime.datetime.now() + datetime.timedelta(days=30)
-            )
             st.success("Login success!")
             st.rerun()
         else:
             if status == "Key already in use":
-                st.error("🔒 Key នេះកំពុងដំណើរការលើ browser ផ្សេង។ សូម Logout ពីកន្លែងនោះសិន។")
+                st.error("🔒 Key នេះកំពុងដំណើរការកន្លែងផ្សេង។ សូម Logout ពីកន្លែងនោះសិន។")
             else:
                 st.error(status)
     
     st.markdown("---")
-    st.info("Admin: open URL with `?view=admin` (e.g. `http://localhost:8501/?view=admin`)")
+    st.info(
+        "Admin: open URL with `?view=admin`\n"
+        "Auto-login: បង្កើត link `http://your-host:8501/?key=YOUR_KEY` ហើយ Bookmark វា។"
+    )
     st.stop()
 
 # ==========================================
@@ -339,12 +311,11 @@ VOICES = {
 with st.sidebar:
     st.success(f"✅ Active: {st.session_state.days} Days")
 
-    # Logout: clear active_sessions + cookie + session_state
+    # Logout: clear active_sessions + session_state
     if st.button("Logout"):
         current_key = st.session_state.get("ukey")
         if current_key:
-            logout_key(current_key, client_id)
-        cm.delete("auth_key")
+            logout_key(current_key)
         st.session_state.clear()
         st.rerun()
 
@@ -397,7 +368,9 @@ with st.sidebar:
 # --- TABS ---
 tab1, tab2, tab3 = st.tabs(["📝 Text Mode", "🎬 SRT Multi-Speaker", "🤖 SRT Translator"])
 
-# 1. TEXT MODE
+# ==========================================
+# 5. TEXT MODE
+# ==========================================
 with tab1:
     txt = st.text_area("Input Text...", height=150)
     if st.button("Generate Audio 🎵", type="primary"):
@@ -417,7 +390,9 @@ with tab1:
                 except Exception as e:
                     st.error(f"Error: {e}")
 
-# 2. SRT MULTI-SPEAKER
+# ==========================================
+# 6. SRT MULTI-SPEAKER
+# ==========================================
 with tab2:
     st.info("SRT Mode: Adjust voice for each line. Audio will sync to SRT time.")
     srt_file = st.file_uploader("Upload SRT", type="srt", key="srt_up")
@@ -594,7 +569,9 @@ with tab2:
                 st.audio(buf)
                 st.download_button("Download Conversation", buf, "conversation.mp3", "audio/mp3")
 
-# TAB 3
+# ==========================================
+# 7. TAB 3 (COMING SOON)
+# ==========================================
 with tab3:
     st.subheader("Gemini Translator (SRT)")
     st.info("Coming Soon...")
