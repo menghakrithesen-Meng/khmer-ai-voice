@@ -183,7 +183,7 @@ if st.query_params.get("view") == "admin":
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
 cm = get_cookie_manager()
 
-# AUTH & REMEMBER ME
+# AUTH
 if 'auth' not in st.session_state:
     st.session_state.auth = False
     ck = cm.get("auth_key")
@@ -196,16 +196,13 @@ if 'auth' not in st.session_state:
 
 if not st.session_state.auth:
     key = st.text_input("🔑 Access Key", type="password")
-    remember = st.checkbox("ចងចាំខ្ញុំ (Remember Me)", value=True)
-    
     if st.button("Login"):
         s, d = check_access_key(key)
         if s == "Valid":
             st.session_state.auth = True
             st.session_state.ukey = key
             st.session_state.days = d
-            if remember:
-                cm.set("auth_key", key, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
+            cm.set("auth_key", key, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
             st.rerun()
         else:
             st.error(s)
@@ -247,8 +244,8 @@ with st.sidebar:
     st.session_state.g_pitch = p_sel
 
     st.divider()
-    st.subheader("💾 6 Presets")
-    preset_name_input = st.text_input("Name (Short)", placeholder="Ex: Boy")
+    st.subheader("💾 6 Presets (Save/Load)")
+    preset_name_input = st.text_input("Preset Name (Short)", placeholder="Ex: Boy")
     
     for i in range(1, 7):
         c1, c2 = st.columns([3, 1])
@@ -275,7 +272,7 @@ tab1, tab2, tab3 = st.tabs(["📝 Text Mode", "🎬 SRT Multi-Speaker", "🤖 SR
 # 1. TEXT MODE
 with tab1:
     txt = st.text_area("Input Text...", height=150)
-    if st.button("Generate Audio", type="primary"):
+    if st.button("Generate Audio 🎵", type="primary"):
         if txt:
             with st.spinner("Generating..."):
                 try:
@@ -322,12 +319,7 @@ with tab2:
                 new_r = c_rate.number_input("Rate", -50, 50, value=current_s['rate'], key=k_r, label_visibility="collapsed")
                 new_p = c_pitch.number_input("Pitch", -50, 50, value=current_s['pitch'], key=k_p, label_visibility="collapsed")
                 
-                # Manual Change -> Reset active slot
-                active = current_s.get('active_slot')
-                if new_v != current_s['voice'] or new_r != current_s['rate'] or new_p != current_s['pitch']:
-                    active = None
-                
-                st.session_state.line_settings[idx] = {"voice": new_v, "rate": new_r, "pitch": new_p, "active_slot": active}
+                st.session_state.line_settings[idx] = {"voice": new_v, "rate": new_r, "pitch": new_p}
 
                 # PRESET BUTTONS (SHOW NAMES)
                 with c_presets:
@@ -339,16 +331,12 @@ with tab2:
                         # Limit Text Length
                         if len(btn_label) > 4: btn_label = btn_label[:4]
                         
-                        # Color logic
-                        b_type = "primary" if active == slot_id else "secondary"
-                        
-                        if cols[slot_id-1].button(btn_label, key=f"btn_{idx}_{slot_id}", type=b_type, help=f"Apply: {btn_label}"):
+                        if cols[slot_id-1].button(btn_label, key=f"btn_{idx}_{slot_id}", help=f"Apply: {btn_label}"):
                             if p_data:
                                 st.session_state.line_settings[idx] = {
                                     "voice": p_data['voice'],
                                     "rate": p_data['rate'],
-                                    "pitch": p_data['pitch'],
-                                    "active_slot": slot_id
+                                    "pitch": p_data['pitch']
                                 }
                                 st.rerun()
 
