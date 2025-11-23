@@ -29,26 +29,36 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# SHARED FUNCTIONS
+# SHARED FUNCTIONS (FIXED INDENTATION)
 # ==========================================
 def load_json(path):
-    if not os.path.exists(path): return {}
-    try: with open(path, "r") as f: return json.load(f)
-    except: return {}
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r") as f:
+            return json.load(f)
+    except:
+        return {}
 
 def save_json(path, data):
-    try: with open(path, "w") as f: json.dump(data, f, indent=2)
-    except: pass
+    try:
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+    except:
+        pass
 
 def get_cookie_manager():
-    if 'cookie_manager' not in st.session_state: st.session_state.cookie_manager = stx.CookieManager()
+    if 'cookie_manager' not in st.session_state:
+        st.session_state.cookie_manager = stx.CookieManager()
     return st.session_state.cookie_manager
 
 def check_access_key(user_key):
     keys_db = load_json(KEYS_FILE)
-    if user_key not in keys_db: return "Invalid Key", 0
+    if user_key not in keys_db:
+        return "Invalid Key", 0
     k_data = keys_db[user_key]
-    if k_data["status"] != "active": return "Key Disabled", 0
+    if k_data["status"] != "active":
+        return "Key Disabled", 0
     
     if not k_data.get("activated_date"):
         k_data["activated_date"] = str(datetime.date.today())
@@ -61,7 +71,8 @@ def check_access_key(user_key):
 
 def save_preset(user_key, slot, settings, name):
     data = load_json(PRESETS_FILE)
-    if user_key not in data: data[user_key] = {}
+    if user_key not in data:
+        data[user_key] = {}
     settings['name'] = name if name else f"S{slot}"
     data[user_key][str(slot)] = settings
     save_json(PRESETS_FILE, data)
@@ -83,7 +94,8 @@ def add_effects(file_path, pad_ms):
         seg = AudioSegment.from_file(file_path)
         pad = AudioSegment.silent(duration=pad_ms)
         return pad + effects.normalize(seg) + pad
-    except: return AudioSegment.from_file(file_path)
+    except:
+        return AudioSegment.from_file(file_path)
 
 # ==========================================
 # MAIN UI
@@ -111,23 +123,32 @@ if 'auth' not in st.session_state:
     cookie_key = cm.get("auth_key")
     if cookie_key:
         s, d = check_access_key(cookie_key)
-        if s == "Valid": st.session_state.auth = True; st.session_state.ukey = cookie_key; st.session_state.days = d
+        if s == "Valid":
+            st.session_state.auth = True
+            st.session_state.ukey = cookie_key
+            st.session_state.days = d
 
 if not st.session_state.auth:
     key = st.text_input("🔑 Access Key", type="password")
     if st.button("Login"):
         s, d = check_access_key(key)
         if s == "Valid":
-            st.session_state.auth = True; st.session_state.ukey = key; st.session_state.days = d
+            st.session_state.auth = True
+            st.session_state.ukey = key
+            st.session_state.days = d
             cm.set("auth_key", key, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
             st.rerun()
-        else: st.error(s)
+        else:
+            st.error(s)
     st.stop()
 
 # APP
 with st.sidebar:
     st.success(f"✅ Active: {st.session_state.days} Days")
-    if st.button("Logout"): cm.delete("auth_key"); st.session_state.clear(); st.rerun()
+    if st.button("Logout"):
+        cm.delete("auth_key")
+        st.session_state.clear()
+        st.rerun()
     st.divider()
     
     voice_options = {
@@ -173,4 +194,5 @@ if st.button("Generate Audio 🎵", type="primary", use_container_width=True):
                 final_audio.export(buf, format="mp3")
                 st.audio(buf)
                 st.download_button("Download MP3", buf, "audio.mp3", "audio/mp3", use_container_width=True)
-            except Exception as e: st.error(f"Error: {e}")
+            except Exception as e:
+                st.error(f"Error: {e}")
