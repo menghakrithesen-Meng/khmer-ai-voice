@@ -1,0 +1,10 @@
+# Khmer AI Voice (Mobile Version) 🎙️
+
+កម្មវិធីបង្កើតសំឡេង AI ភាសាខ្មែរ ដំណើរការលើទូរស័ព្ទ (Termux) ឬ PC។
+
+### របៀបដំឡើង (Installation)
+
+1. ទាញយកកូដ:
+   ```bash
+   git clone [https://github.com/menghakrithesen-Meng/khmer-ai-voice](https://github.com/menghakrithesen-Meng/khmer-ai-voice) app
+   cd app
