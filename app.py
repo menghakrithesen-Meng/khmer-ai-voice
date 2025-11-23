@@ -6,7 +6,6 @@ import tempfile
 import os
 import json
 import datetime
-import uuid
 import time
 import string
 import random
@@ -142,6 +141,18 @@ def save_user_preset(user_key, slot, data, name):
 def get_user_preset(user_key, slot):
     db = load_json(PRESETS_FILE)
     return db.get(user_key, {}).get(str(slot), None)
+
+# 🔧 Apply preset to one SRT line
+def apply_preset_to_line(user_key, line_index, slot_id):
+    pd = get_user_preset(user_key, slot_id)
+    if not pd:
+        return
+    st.session_state.line_settings[line_index] = {
+        "voice": pd["voice"],
+        "rate": pd["rate"],
+        "pitch": pd["pitch"],
+        "active_slot": slot_id,
+    }
 
 # --- AUDIO ENGINE ---
 async def gen_edge(text, voice, rate, pitch):
@@ -343,7 +354,7 @@ with tab2:
                     "active_slot": None
                 })
 
-        # 🎭 SRT DEFAULT PRESET
+        # 🎭 SRT DEFAULT PRESET (APPLY TO ALL)
         st.markdown("#### 🎭 SRT Default Preset")
 
         preset_options = ["-- No Preset --"]
@@ -365,12 +376,7 @@ with tab2:
             if srt_default_preset in preset_map:
                 slot_id, pd = preset_map[srt_default_preset]
                 for idx in range(len(st.session_state.srt_lines)):
-                    st.session_state.line_settings[idx] = {
-                        "voice": pd['voice'],
-                        "rate": pd['rate'],
-                        "pitch": pd['pitch'],
-                        "active_slot": slot_id
-                    }
+                    apply_preset_to_line(st.session_state.ukey, idx, slot_id)
                 st.success(f"Applied {srt_default_preset} to all lines ✅")
                 st.rerun()
             else:
@@ -406,7 +412,7 @@ with tab2:
                 
                 c_voice, c_rate, c_pitch, c_presets = st.columns([2, 1, 1, 4])
                 
-                # Controls (មានតម្លៃតាម state)
+                # Controls (V/R/P)
                 new_v = c_voice.selectbox(
                     "V", 
                     list(VOICES.keys()), 
@@ -423,26 +429,30 @@ with tab2:
                     label_visibility="collapsed"
                 )
                 
-                # Detect Manual Change → clear preset
+                # បើ user កែ V/R/P ដោយដៃ → clear preset
                 if new_v != cur['voice'] or new_r != cur['rate'] or new_p != cur['pitch']:
+                    st.session_state.line_settings[idx] = {
+                        "voice": new_v,
+                        "rate": new_r,
+                        "pitch": new_p,
+                        "active_slot": None
+                    }
                     active_slot = None
-                
-                # Save State
-                st.session_state.line_settings[idx] = {
-                    "voice": new_v, 
-                    "rate": new_r, 
-                    "pitch": new_p, 
-                    "active_slot": active_slot
-                }
+                else:
+                    # កុំបាត់ active_slot ប្រសិនបើមិនបានកែ
+                    st.session_state.line_settings[idx]["active_slot"] = active_slot
 
-                # Preset Buttons
+                # Preset Buttons per line (override after Apply All ក៏បាន)
                 with c_presets:
                     cols = st.columns(6)
                     for slot_id in range(1, 7):
                         pd = get_user_preset(st.session_state.ukey, slot_id)
-                        full_name = pd['name'] if pd and pd.get('name') else str(slot_id)
+                        if pd:
+                            full_name = pd['name'] if pd.get('name') else str(slot_id)
+                        else:
+                            full_name = f"-"
+
                         btn_label = full_name if len(full_name) <= 4 else full_name[:4]
-                        
                         b_type = "primary" if active_slot == slot_id else "secondary"
                         
                         if cols[slot_id-1].button(
@@ -452,12 +462,7 @@ with tab2:
                             help=f"Apply: {full_name}"
                         ):
                             if pd:
-                                st.session_state.line_settings[idx] = {
-                                    "voice": pd['voice'],
-                                    "rate": pd['rate'],
-                                    "pitch": pd['pitch'],
-                                    "active_slot": slot_id
-                                }
+                                apply_preset_to_line(st.session_state.ukey, idx, slot_id)
                                 st.rerun()
 
         # GENERATE FULL AUDIO
@@ -493,18 +498,5 @@ with tab2:
                         pass
                     progress.progress((i+1)/len(st.session_state.srt_lines))
                 
-                status.success("Done! Audio synced.")
-                buf = io.BytesIO()
-                final_mix.export(buf, format="mp3")
-                st.audio(buf)
-                st.download_button("Download Conversation", buf, "conversation.mp3")
-                
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-# TAB 3
-with tab3:
-    st.subheader("Gemini Translator (SRT)")
-    st.info("Coming Soon...")
-
+           
 
