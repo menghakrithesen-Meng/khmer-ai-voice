@@ -227,47 +227,40 @@ def gen_audio_simple(t, eng, v, r, p, sty, gs, pad):
     try:
         # 1. Generate Raw Audio
         if eng == "Edge-TTS": 
-            # --- FIX: Better Asyncio Handling for Streamlit ---
             async def _do_gen():
-                communicate = edge_tts.Communicate(t, voice=v, rate=f"{r:+d}%", pitch=f"{p:+d}Hz")
+                # ដាក់លក្ខខណ្ឌ៖ បើ Rate ឬ Pitch ស្មើ 0 កុំដាក់វាចូលក្នុងសំណើ
+                args = {"voice": v}
+                if r != 0: args["rate"] = f"{r:+d}%"
+                if p != 0: args["pitch"] = f"{p:+d}Hz"
+                
+                communicate = edge_tts.Communicate(t, **args)
                 await communicate.save(tmp_path)
             
             try:
-                # Try standard run
                 asyncio.run(_do_gen())
             except Exception:
-                # Fallback: Create new loop if standard run fails
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 loop.run_until_complete(_do_gen())
                 loop.close()
-            # --------------------------------------------------
         else: 
             gTTS(t, lang='km').write_to_fp(open(tmp_path, 'wb'))
         
-        # 2. Verify File Creation
+        # 2. Verify File
         if not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
-            st.error("❌ Error: Audio file creation failed (File is empty or missing).")
+            st.error("❌ Error: Audio file is empty. (Microsoft blocked the request?)")
             return AudioSegment.silent(duration=0)
 
-        # 3. Try Pydub Processing (Padding/Normalize)
+        # 3. Add Effects (Pydub)
         try:
             seg = AudioSegment.from_file(tmp_path)
-            
-            if eng == "gTTS" and gs != 1.0: 
-                seg = seg.speedup(gs)
-            
+            if eng == "gTTS" and gs != 1.0: seg = seg.speedup(gs)
             pd = AudioSegment.silent(duration=pad)
-            final_seg = pd + effects.normalize(seg) + pd
-            return final_seg
-            
-        except Exception as pydub_error:
-            # If FFmpeg is missing/fails, return raw audio (Emergency Mode)
-            # st.warning(f"⚠️ Effects failed (FFmpeg issue), returning raw audio.") 
+            return pd + effects.normalize(seg) + pd
+        except Exception:
             return AudioSegment.from_file(tmp_path) 
 
     except Exception as main_error:
-        # SHOW REAL ERROR ON SCREEN
         st.error(f"🔴 System Error: {main_error}")
         return AudioSegment.silent(duration=0)
     
@@ -561,4 +554,5 @@ else:
 
     st.markdown("---")
     st.caption("Contact Admin: [Telegram @menghakmc](https://t.me/menghakmc)")
+
 
