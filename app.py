@@ -11,7 +11,6 @@ import string
 import random
 import io
 import re
-import extra_streamlit_components as stx
 
 # ==========================================
 # 0. CONFIG & SETUP
@@ -20,6 +19,7 @@ st.set_page_config(page_title="Khmer AI Voice Pro", page_icon="🎙️", layout=
 
 KEYS_FILE = "web_keys.json"
 PRESETS_FILE = "user_presets.json"
+REMEMBER_FILE = "remember_key.json"   # ⭐ server-side remember
 
 # 🎨 CUSTOM CSS
 st.markdown("""
@@ -91,22 +91,42 @@ def load_json(path):
     if not os.path.exists(path):
         return {}
     try:
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return {}
 
 def save_json(path, data):
     try:
-        with open(path, "w") as f:
-            json.dump(data, f, indent=2)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
     except Exception:
         pass
 
-def get_cookie_manager():
-    if 'cookie_manager' not in st.session_state:
-        st.session_state.cookie_manager = stx.CookieManager()
-    return st.session_state.cookie_manager
+# --- REMEMBER KEY (SERVER SIDE) ---
+def load_remembered_key():
+    if not os.path.exists(REMEMBER_FILE):
+        return None
+    try:
+        with open(REMEMBER_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("key")
+    except Exception:
+        return None
+
+def save_remembered_key(key):
+    try:
+        with open(REMEMBER_FILE, "w", encoding="utf-8") as f:
+            json.dump({"key": key}, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+def clear_remembered_key():
+    try:
+        if os.path.exists(REMEMBER_FILE):
+            os.remove(REMEMBER_FILE)
+    except Exception:
+        pass
 
 # --- AUTH ---
 def check_access_key(user_key):
@@ -201,10 +221,8 @@ def parse_srt(content):
     return subs
 
 # ==========================================
-# 2. MAIN APP UI
+# 2. ADMIN (via ?view=admin)
 # ==========================================
-
-# ADMIN (access by URL only: ?view=admin)
 if st.query_params.get("view") == "admin":
     st.title("🔐 Admin Panel")
     pwd = st.text_input("Password", type="password")
@@ -219,24 +237,15 @@ if st.query_params.get("view") == "admin":
         st.json(load_json(KEYS_FILE))
     st.stop()
 
+# ==========================================
+# 3. AUTH FLOW
+# ==========================================
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
-cm = get_cookie_manager()
 
-# Init auth state
 if 'auth' not in st.session_state:
     st.session_state.auth = False
 
-# 1) AUTO-LOGIN BY COOKIE
-if not st.session_state.auth:
-    ck = cm.get("auth_key")
-    if ck:
-        s, d = check_access_key(ck)
-        if s == "Valid":
-            st.session_state.auth = True
-            st.session_state.ukey = ck
-            st.session_state.days = d
-
-# 2) AUTO-LOGIN BY URL ?key=... or ?k=...
+# 1) AUTO-LOGIN BY URL ?key=... or ?k=...
 if not st.session_state.auth:
     qp = st.query_params.get("key") or st.query_params.get("k")
     if qp:
@@ -245,10 +254,19 @@ if not st.session_state.auth:
             st.session_state.auth = True
             st.session_state.ukey = qp
             st.session_state.days = d
-            # also drop cookie for future
-            cm.set("auth_key", qp, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
+            save_remembered_key(qp)
 
-# 3) SHOW LOGIN FORM IF STILL NOT AUTH
+# 2) AUTO-LOGIN BY REMEMBER_FILE
+if not st.session_state.auth:
+    rem = load_remembered_key()
+    if rem:
+        s, d = check_access_key(rem)
+        if s == "Valid":
+            st.session_state.auth = True
+            st.session_state.ukey = rem
+            st.session_state.days = d
+
+# 3) LOGIN FORM
 if not st.session_state.auth:
     key = st.text_input("🔑 Access Key", type="password")
     if st.button("Login"):
@@ -257,25 +275,21 @@ if not st.session_state.auth:
             st.session_state.auth = True
             st.session_state.ukey = key
             st.session_state.days = d
-            cm.set(
-                "auth_key",
-                key,
-                expires_at=datetime.datetime.now() + datetime.timedelta(days=30)
-            )
-            st.success("Login success! (Key remembered on this browser if cookies work)")
+            save_remembered_key(key)   # ⭐ remember on server
+            st.success("Login success! (Remembered on this server)")
             st.rerun()
         else:
             st.error(s)
     
     st.markdown("---")
     st.info(
-        "Admin: open URL with `?view=admin` (e.g. `http://localhost:8501/?view=admin`).\n\n"
-        "You can also bookmark URL with `?key=YOUR_KEY` to auto-login."
+        "• Admin: open URL with `?view=admin` (e.g. `http://localhost:8501/?view=admin`)\n"
+        "• Auto-login URL: add `?key=YOUR_KEY` to the link and bookmark it."
     )
     st.stop()
 
 # ==========================================
-# 3. AFTER AUTH
+# 4. AFTER AUTH
 # ==========================================
 
 # VOICES
@@ -298,7 +312,7 @@ VOICES = {
 with st.sidebar:
     st.success(f"✅ Active: {st.session_state.days} Days")
     if st.button("Logout"):
-        cm.delete("auth_key")
+        clear_remembered_key()
         st.session_state.clear()
         st.rerun()
     
