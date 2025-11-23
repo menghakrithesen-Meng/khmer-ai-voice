@@ -11,6 +11,8 @@ import string
 import random
 import io
 import re
+import uuid
+import extra_streamlit_components as stx
 
 # ==========================================
 # 0. CONFIG & SETUP
@@ -19,7 +21,7 @@ st.set_page_config(page_title="Khmer AI Voice Pro", page_icon="🎙️", layout=
 
 KEYS_FILE = "web_keys.json"
 PRESETS_FILE = "user_presets.json"
-REMEMBER_FILE = "remember_key.json"   # ⭐ server-side remember
+ACTIVE_FILE = "active_sessions.json"  # ⭐ key -> active client_id
 
 # 🎨 CUSTOM CSS
 st.markdown("""
@@ -85,7 +87,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. FUNCTIONS
+# 1. UTILS
 # ==========================================
 def load_json(path):
     if not os.path.exists(path):
@@ -103,33 +105,32 @@ def save_json(path, data):
     except Exception:
         pass
 
-# --- REMEMBER KEY (SERVER SIDE) ---
-def load_remembered_key():
-    if not os.path.exists(REMEMBER_FILE):
-        return None
-    try:
-        with open(REMEMBER_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data.get("key")
-    except Exception:
-        return None
+def get_cookie_manager():
+    if 'cookie_manager' not in st.session_state:
+        st.session_state.cookie_manager = stx.CookieManager()
+    return st.session_state.cookie_manager
 
-def save_remembered_key(key):
-    try:
-        with open(REMEMBER_FILE, "w", encoding="utf-8") as f:
-            json.dump({"key": key}, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
+def get_or_create_client_id(cm):
+    """
+    ១ Browser = ១ client_id (រក្សាទុកក្នុង cookie "client_id")
+    """
+    cid = cm.get("client_id")
+    if not cid:
+        cid = str(uuid.uuid4())
+        cm.set("client_id", cid)  # persistent cookie
+    return cid
 
-def clear_remembered_key():
-    try:
-        if os.path.exists(REMEMBER_FILE):
-            os.remove(REMEMBER_FILE)
-    except Exception:
-        pass
+def load_active_sessions():
+    data = load_json(ACTIVE_FILE)
+    if isinstance(data, dict):
+        return data
+    return {}
 
-# --- AUTH ---
-def check_access_key(user_key):
+def save_active_sessions(data):
+    save_json(ACTIVE_FILE, data)
+
+# --- AUTH CHECK (lifetime only) ---
+def check_access_key_lifetime(user_key):
     keys_db = load_json(KEYS_FILE)
     if user_key not in keys_db:
         return "Invalid Key", 0
@@ -148,6 +149,36 @@ def check_access_key(user_key):
     if left < 0:
         return "Expired", 0
     return "Valid", left
+
+# --- LOGIN WITH SINGLE ACTIVE BROWSER ---
+def try_login(user_key, client_id):
+    """
+    Return (status, days_left)
+    Status:
+      - "Valid"  -> login allowed (and active_sessions updated)
+      - other    -> error string
+    """
+    status, days = check_access_key_lifetime(user_key)
+    if status != "Valid":
+        return status, days
+
+    active = load_active_sessions()
+    current = active.get(user_key)
+
+    # key not active yet OR already active on this same client_id
+    if current is None or current == client_id:
+        active[user_key] = client_id
+        save_active_sessions(active)
+        return "Valid", days
+
+    # active somewhere else
+    return "Key already in use", days
+
+def logout_key(user_key, client_id):
+    active = load_active_sessions()
+    if active.get(user_key) == client_id:
+        del active[user_key]
+        save_active_sessions(active)
 
 # --- PRESETS ---
 def save_user_preset(user_key, slot, data, name):
@@ -171,7 +202,7 @@ def apply_preset_to_line(user_key, line_index, slot_id):
         "voice": pd["voice"],
         "rate": pd["rate"],
         "pitch": pd["pitch"],
-        "slot": slot_id,   # for color/label
+        "slot": slot_id,   # for color & label
     }
 
 # --- AUDIO ENGINE ---
@@ -241,51 +272,47 @@ if st.query_params.get("view") == "admin":
 # 3. AUTH FLOW
 # ==========================================
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
+cm = get_cookie_manager()
+client_id = get_or_create_client_id(cm)
 
 if 'auth' not in st.session_state:
     st.session_state.auth = False
 
-# 1) AUTO-LOGIN BY URL ?key=... or ?k=...
+# 3.1 AUTO-LOGIN BY COOKIE
 if not st.session_state.auth:
-    qp = st.query_params.get("key") or st.query_params.get("k")
-    if qp:
-        s, d = check_access_key(qp)
-        if s == "Valid":
+    ck = cm.get("auth_key")
+    if ck:
+        status, days = try_login(ck, client_id)
+        if status == "Valid":
             st.session_state.auth = True
-            st.session_state.ukey = qp
-            st.session_state.days = d
-            save_remembered_key(qp)
+            st.session_state.ukey = ck
+            st.session_state.days = days
 
-# 2) AUTO-LOGIN BY REMEMBER_FILE
-if not st.session_state.auth:
-    rem = load_remembered_key()
-    if rem:
-        s, d = check_access_key(rem)
-        if s == "Valid":
-            st.session_state.auth = True
-            st.session_state.ukey = rem
-            st.session_state.days = d
-
-# 3) LOGIN FORM
+# 3.2 SHOW LOGIN FORM IF STILL NOT AUTH
 if not st.session_state.auth:
     key = st.text_input("🔑 Access Key", type="password")
     if st.button("Login"):
-        s, d = check_access_key(key)
-        if s == "Valid":
+        status, days = try_login(key, client_id)
+        if status == "Valid":
             st.session_state.auth = True
             st.session_state.ukey = key
-            st.session_state.days = d
-            save_remembered_key(key)   # ⭐ remember on server
-            st.success("Login success! (Remembered on this server)")
+            st.session_state.days = days
+            # remember on this browser
+            cm.set(
+                "auth_key",
+                key,
+                expires_at=datetime.datetime.now() + datetime.timedelta(days=30)
+            )
+            st.success("Login success!")
             st.rerun()
         else:
-            st.error(s)
+            if status == "Key already in use":
+                st.error("🔒 Key នេះកំពុងដំណើរការលើ browser ផ្សេង។ សូម Logout ពីកន្លែងនោះសិន។")
+            else:
+                st.error(status)
     
     st.markdown("---")
-    st.info(
-        "• Admin: open URL with `?view=admin` (e.g. `http://localhost:8501/?view=admin`)\n"
-        "• Auto-login URL: add `?key=YOUR_KEY` to the link and bookmark it."
-    )
+    st.info("Admin: open URL with `?view=admin` (e.g. `http://localhost:8501/?view=admin`)")
     st.stop()
 
 # ==========================================
@@ -311,11 +338,16 @@ VOICES = {
 # --- SIDEBAR ---
 with st.sidebar:
     st.success(f"✅ Active: {st.session_state.days} Days")
+
+    # Logout: clear active_sessions + cookie + session_state
     if st.button("Logout"):
-        clear_remembered_key()
+        current_key = st.session_state.get("ukey")
+        if current_key:
+            logout_key(current_key, client_id)
+        cm.delete("auth_key")
         st.session_state.clear()
         st.rerun()
-    
+
     st.divider()
     st.subheader("⚙️ Global Settings")
     
