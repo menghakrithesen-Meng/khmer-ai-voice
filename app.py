@@ -11,7 +11,6 @@ import string
 import random
 import io
 import re
-import uuid
 import extra_streamlit_components as stx
 
 # ==========================================
@@ -21,7 +20,6 @@ st.set_page_config(page_title="Khmer AI Voice Pro", page_icon="🎙️", layout=
 
 KEYS_FILE = "web_keys.json"
 PRESETS_FILE = "user_presets.json"
-ACTIVE_FILE = "active_sessions.json"  # key -> client_id
 
 # 🎨 CUSTOM CSS
 st.markdown("""
@@ -87,7 +85,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. UTILS (JSON / COOKIE / AUTH / PRESET / AUDIO / SRT)
+# 1. FUNCTIONS
 # ==========================================
 def load_json(path):
     if not os.path.exists(path):
@@ -110,24 +108,8 @@ def get_cookie_manager():
         st.session_state.cookie_manager = stx.CookieManager()
     return st.session_state.cookie_manager
 
-def get_or_create_client_id(cm):
-    cid = cm.get("client_id")
-    if not cid:
-        cid = str(uuid.uuid4())
-        cm.set("client_id", cid)
-    return cid
-
-# ---------- ACTIVE SESSIONS ----------
-def load_active_sessions():
-    data = load_json(ACTIVE_FILE)
-    if isinstance(data, dict):
-        return data
-    return {}
-
-def save_active_sessions(data):
-    save_json(ACTIVE_FILE, data)
-
-def check_access_key_lifetime(user_key):
+# --- AUTH (ដូចកូដដើម) ---
+def check_access_key(user_key):
     keys_db = load_json(KEYS_FILE)
     if user_key not in keys_db:
         return "Invalid Key", 0
@@ -147,34 +129,7 @@ def check_access_key_lifetime(user_key):
         return "Expired", 0
     return "Valid", left
 
-def login_with_key(user_key, client_id):
-    """
-    ១ key ប្រើបានតែ ១ browser/session ក្នុងពេលតែមួយ
-    """
-    status, days = check_access_key_lifetime(user_key)
-    if status != "Valid":
-        return status, days
-
-    active = load_active_sessions()
-    current = active.get(user_key)
-
-    # key មិនទាន់ active ឬក៏ active លើ browser ដដែល
-    if current is None or current == client_id:
-        active[user_key] = client_id
-        save_active_sessions(active)
-        return "Valid", days
-
-    # key មាននរណាម្នាក់កំពុងប្រើក្នុង browser ផ្សេង
-    return "Key already in use", days
-
-def logout_key(user_key, client_id):
-    active = load_active_sessions()
-    current = active.get(user_key)
-    if current == client_id:
-        del active[user_key]
-        save_active_sessions(active)
-
-# ---------- PRESETS ----------
+# --- PRESETS ---
 def save_user_preset(user_key, slot, data, name):
     db = load_json(PRESETS_FILE)
     if user_key not in db:
@@ -198,7 +153,7 @@ def apply_preset_to_line(user_key, line_index, slot_id):
         "slot": slot_id,
     }
 
-# ---------- AUDIO ENGINE ----------
+# --- AUDIO ENGINE ---
 async def gen_edge(text, voice, rate, pitch):
     file_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3").name
     rate_str = f"{rate:+d}%" if rate != 0 else "+0%"
@@ -215,7 +170,7 @@ def process_audio(file_path, pad_ms):
     except Exception:
         return AudioSegment.from_file(file_path)
 
-# ---------- SRT PARSER ----------
+# --- SRT PARSER ---
 def srt_time_to_ms(time_str):
     try:
         start, end = time_str.split(" --> ")
@@ -268,40 +223,33 @@ if st.query_params.get("view") == "admin":
     st.stop()
 
 # ==========================================
-# 3. AUTH FLOW (Cookie Remember + 1 key/1 browser)
+# 3. AUTH FLOW (Cookie Remember ដូចដើម)
 # ==========================================
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
-
 cm = get_cookie_manager()
-client_id = get_or_create_client_id(cm)
 
 if "auth" not in st.session_state:
     st.session_state.auth = False
 
-# 3.1 AUTO-LOGIN BY COOKIE auth_key
+# 3.1 AUTO LOGIN BY COOKIE
 if not st.session_state.auth:
     ck = cm.get("auth_key")
     if ck:
-        status, days = login_with_key(ck, client_id)
-        if status == "Valid":
+        s, d = check_access_key(ck)
+        if s == "Valid":
             st.session_state.auth = True
             st.session_state.ukey = ck
-            st.session_state.days = days
-        else:
-            # cookie មាន key ចាស់/ប្រើកន្លែងផ្សេង → លុបចោល
-            cm.delete("auth_key")
-            if status not in ["Invalid Key"]:
-                st.warning(status)
+            st.session_state.days = d
 
-# 3.2 SHOW LOGIN FORM IF STILL NOT AUTH
+# 3.2 LOGIN FORM
 if not st.session_state.auth:
     key = st.text_input("🔑 Access Key", type="password")
     if st.button("Login"):
-        status, days = login_with_key(key, client_id)
-        if status == "Valid":
+        s, d = check_access_key(key)
+        if s == "Valid":
             st.session_state.auth = True
             st.session_state.ukey = key
-            st.session_state.days = days
+            st.session_state.days = d
             # remember key លើ browser នេះ
             cm.set(
                 "auth_key",
@@ -311,13 +259,10 @@ if not st.session_state.auth:
             st.success("Login success!")
             st.rerun()
         else:
-            if status == "Key already in use":
-                st.error("🔒 Key នេះកំពុងដំណើរការក្នុង browser ផ្សេង។ សូម Logout ពីកន្លែងនោះសិន។")
-            else:
-                st.error(status)
+            st.error(s)
 
     st.markdown("---")
-    st.info("Admin: ?view=admin  |  Cookie-based Remember (១ key / ១ browser)")
+    st.info("Admin:បើកជាមួយ `?view=admin`")
     st.stop()
 
 # ==========================================
@@ -345,9 +290,6 @@ with st.sidebar:
     st.success(f"✅ Active: {st.session_state.days} Days")
 
     if st.button("Logout"):
-        current_key = st.session_state.get("ukey")
-        if current_key:
-            logout_key(current_key, client_id)
         cm.delete("auth_key")
         st.session_state.clear()
         st.rerun()
@@ -628,7 +570,7 @@ with tab2:
                 )
 
 # ==========================================
-# 7. TAB 3 (COMING SOON)
+# 7. TAB 3
 # ==========================================
 with tab3:
     st.subheader("Gemini Translator (SRT)")
