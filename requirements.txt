@@ -1,5 +1,5 @@
 streamlit
-edge-tts
+edge-tts>=6.1.9
 gTTS
 pydub
 extra-streamlit-components
