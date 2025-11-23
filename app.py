@@ -142,24 +142,17 @@ def get_user_preset(user_key, slot):
     db = load_json(PRESETS_FILE)
     return db.get(user_key, {}).get(str(slot), None)
 
-# 🔧 Apply preset to one SRT line (voice + rate + pitch + remember slot + sync widgets)
+# 🔧 Apply preset to one SRT line (update logic only; widget state sync will happen BEFORE widgets)
 def apply_preset_to_line(user_key, line_index, slot_id):
     pd = get_user_preset(user_key, slot_id)
     if not pd:
         return
-    
-    # Update logic state
     st.session_state.line_settings[line_index] = {
         "voice": pd["voice"],
         "rate": pd["rate"],
         "pitch": pd["pitch"],
-        "slot": slot_id,   # remember which preset slot (for color/label)
+        "slot": slot_id,   # remember which preset for color/label
     }
-
-    # Sync widget state so UI (selectbox / number_input) ក្លាយតាម preset
-    st.session_state[f"v_{line_index}"] = pd["voice"]
-    st.session_state[f"r_{line_index}"] = pd["rate"]
-    st.session_state[f"p_{line_index}"] = pd["pitch"]
 
 # --- AUDIO ENGINE ---
 async def gen_edge(text, voice, rate, pitch):
@@ -285,8 +278,11 @@ with st.sidebar:
     if "g_pitch" not in st.session_state:
         st.session_state.g_pitch = 0
     
-    v_sel = st.selectbox("Voice", list(VOICES.keys()),
-                         index=list(VOICES.keys()).index(st.session_state.g_voice))
+    v_sel = st.selectbox(
+        "Voice",
+        list(VOICES.keys()),
+        index=list(VOICES.keys()).index(st.session_state.g_voice),
+    )
     r_sel = st.slider("Speed", -50, 50, value=st.session_state.g_rate)
     p_sel = st.slider("Pitch", -50, 50, value=st.session_state.g_pitch)
     pad_sel = st.number_input("Padding (ms)", value=80)
@@ -389,6 +385,12 @@ with tab2:
             else:
                 st.warning("Please select a valid preset before applying.")
 
+        # ==== SYNC widget state FROM line_settings (BEFORE widgets are created) ====
+        for idx, cur in enumerate(st.session_state.line_settings):
+            st.session_state[f"v_{idx}"] = cur["voice"]
+            st.session_state[f"r_{idx}"] = cur["rate"]
+            st.session_state[f"p_{idx}"] = cur["pitch"]
+
         # SRT LINE EDITOR (per-line preset + color)
         with st.container(height=600):
             for idx, sub in enumerate(st.session_state.srt_lines):
@@ -417,29 +419,32 @@ with tab2:
 
                 c_voice, c_rate, c_pitch, c_presets = st.columns([2, 1, 1, 4])
 
-                # Controls — use widget keys v_idx / r_idx / p_idx (state will be
-                # overridden by st.session_state[...] when apply_preset_to_line is called)
+                voice_key = f"v_{idx}"
+                rate_key = f"r_{idx}"
+                pitch_key = f"p_{idx}"
+
+                # Controls — value comes from session_state (synced just above)
                 new_v = c_voice.selectbox(
                     "V",
                     list(VOICES.keys()),
-                    index=list(VOICES.keys()).index(cur['voice']),
-                    key=f"v_{idx}",
+                    index=list(VOICES.keys()).index(st.session_state[voice_key]),
+                    key=voice_key,
                     label_visibility="collapsed",
                 )
                 new_r = c_rate.number_input(
                     "R", -50, 50,
-                    value=cur['rate'],
-                    key=f"r_{idx}",
+                    value=st.session_state[rate_key],
+                    key=rate_key,
                     label_visibility="collapsed",
                 )
                 new_p = c_pitch.number_input(
                     "P", -50, 50,
-                    value=cur['pitch'],
-                    key=f"p_{idx}",
+                    value=st.session_state[pitch_key],
+                    key=pitch_key,
                     label_visibility="collapsed",
                 )
 
-                # Manual change → update voice/rate/pitch BUT keep slot (color/label not lost)
+                # Manual change → update logic, keep same slot (color/label)
                 st.session_state.line_settings[idx] = {
                     "voice": new_v,
                     "rate": new_r,
