@@ -33,12 +33,14 @@ st.markdown("""
     /* Global Buttons */
     .stButton > button { border-radius: 6px; font-size: 13px; padding: 4px 10px; transition: 0.2s; }
     
-    /* SRT Preset Buttons */
+    /* Secondary Buttons */
     div[data-testid="column"] button[kind="secondary"] {
         background-color: #334155 !important; border: 1px solid #475569 !important; 
         color: #cbd5e1 !important; font-size: 11px !important; min-height: 32px; width: 100%; padding: 0px 2px !important;
     }
     div[data-testid="column"] button[kind="secondary"]:hover { background-color: #475569 !important; color: white !important; }
+    
+    /* Primary/Active Buttons */
     div[data-testid="column"] button[kind="primary"] {
         background: linear-gradient(135deg, #ec4899, #8b5cf6) !important; border: 1px solid #f472b6 !important;
         color: white !important; font-weight: bold !important; box-shadow: 0 0 8px rgba(236, 72, 153, 0.6);
@@ -188,7 +190,6 @@ async def edge_gen_memory_indexed(index, text, voice, rate, pitch, style="Neutra
 
 async def process_srt_with_progress(subs, line_configs, v_opts, pad_ms, progress_bar, status_text):
     tasks = []
-    name_to_code = v_opts
     for i, sub in enumerate(subs):
         cfg = line_configs[i]
         voice_selection = cfg['voice']
@@ -210,31 +211,62 @@ async def process_srt_with_progress(subs, line_configs, v_opts, pad_ms, progress
     for i in range(len(subs)):
         raw = results_dict.get(i)
         if raw:
-            seg = AudioSegment.from_file(io.BytesIO(raw))
-            seg = pad + effects.normalize(seg) + pad
-            full = full.overlay(seg, position=subs[i]['start'])
+            try:
+                seg = AudioSegment.from_file(io.BytesIO(raw))
+                seg = pad + effects.normalize(seg) + pad
+                full = full.overlay(seg, position=subs[i]['start'])
+            except Exception as e:
+                print(f"SRT Segment Error {i}: {e}")
     return full
 
 def gen_audio_simple(t, eng, v, r, p, sty, gs, pad):
-    with tempfile.NamedTemporaryFile(delete=False,suffix=".mp3") as f: tmp=f.name
+    # Create temp file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f: 
+        tmp_path = f.name
+
     try:
-        if eng=="Edge-TTS": 
-            asyncio.run(edge_tts.Communicate(t, voice=v, rate=f"{r:+d}%", pitch=f"{p:+d}Hz").save(tmp))
-            seg=AudioSegment.from_file(tmp)
+        # 1. Generate Raw Audio
+        if eng == "Edge-TTS": 
+            # Use safe async run
+            try:
+                asyncio.run(edge_tts.Communicate(t, voice=v, rate=f"{r:+d}%", pitch=f"{p:+d}Hz").save(tmp_path))
+            except RuntimeError:
+                # Fallback if loop is already running
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(edge_tts.Communicate(t, voice=v, rate=f"{r:+d}%", pitch=f"{p:+d}Hz").save(tmp_path))
         else: 
-            gTTS(t,lang='km').write_to_fp(f)
-            seg=AudioSegment.from_file(tmp)
-            if gs!=1.0: seg=seg.speedup(gs)
-        try: os.remove(tmp)
+            gTTS(t, lang='km').write_to_fp(open(tmp_path, 'wb'))
+        
+        # 2. Try Pydub Processing (Padding/Normalize)
+        # This part requires FFmpeg. If it fails, we fall back to raw audio.
+        try:
+            seg = AudioSegment.from_file(tmp_path)
+            
+            if eng == "gTTS" and gs != 1.0: 
+                seg = seg.speedup(gs)
+            
+            pd = AudioSegment.silent(duration=pad)
+            final_seg = pd + effects.normalize(seg) + pd
+            return final_seg
+            
+        except Exception as pydub_error:
+            print(f"⚠️ Pydub/FFmpeg Error: {pydub_error}")
+            print("🔄 Falling back to RAW audio without effects.")
+            # Return raw audio if effects fail
+            return AudioSegment.from_file(tmp_path) 
+
+    except Exception as main_error:
+        print(f"❌ Generation Error: {main_error}")
+        return AudioSegment.silent(duration=0)
+    
+    finally:
+        try: os.remove(tmp_path)
         except: pass
-        pd=AudioSegment.silent(pad)
-        return pd+effects.normalize(seg)+pd
-    except: return AudioSegment.silent(0)
 
 # ==========================================
 # 4. MAIN DISPATCHER
 # ==========================================
-# Check for 'view' in query params to switch between User App and Admin Panel
 query_params = st.query_params
 view_mode = query_params.get("view", "app")
 
@@ -244,7 +276,6 @@ if view_mode == "admin":
     # ++++++++++++++++++++++++++++++++++++++++++++++++++++++
     st.title("🔐 Admin Panel (Key Manager)")
     
-    # Simple Admin Password Protection
     if 'admin_logged_in' not in st.session_state:
         st.session_state.admin_logged_in = False
 
@@ -259,6 +290,11 @@ if view_mode == "admin":
                     st.rerun()
                 else:
                     st.error("Incorrect Password")
+            
+            st.markdown("---")
+            if st.button("⬅️ Back to App", type="secondary"):
+                st.query_params["view"] = "app"
+                st.rerun()
         st.stop()
 
     # Sidebar for Admin
@@ -315,7 +351,7 @@ if view_mode == "admin":
 
 else:
     # ++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    # USER APP UI (Original Code)
+    # USER APP UI
     # ++++++++++++++++++++++++++++++++++++++++++++++++++++++
     st.title("🇰🇭 Khmer AI Voice Pro")
 
@@ -354,6 +390,14 @@ else:
                     if rem: cm.set("auth_key", k_input, key="set_auth_key", expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
                     st.rerun()
                 else: st.error(s)
+            
+            # ++++++ ADMIN BUTTON ADDED HERE ++++++
+            st.markdown("---")
+            if st.button("🔐 Admin Login", use_container_width=True):
+                st.query_params["view"] = "admin"
+                st.rerun()
+            # +++++++++++++++++++++++++++++++++++++
+
         st.stop()
 
     # --- LOGGED IN INTERFACE ---
@@ -430,8 +474,12 @@ else:
                 vc_code = v_opts[v_lbl] if eng=="Edge-TTS" else "km"
                 gs_val = gs if eng=="gTTS" else 1.0
                 fin = gen_audio_simple(txt, eng, vc_code, rt, pt, "Neutral", gs_val, pad)
-                buf = io.BytesIO(); fin.export(buf, format="mp3")
-                st.success("Done!"); st.audio(buf); st.download_button("Download MP3", buf, "audio.mp3", "audio/mp3", use_container_width=True)
+                
+                if fin.duration_seconds == 0:
+                    st.error("Failed to generate audio. Check logs.")
+                else:
+                    buf = io.BytesIO(); fin.export(buf, format="mp3")
+                    st.success("Done!"); st.audio(buf); st.download_button("Download MP3", buf, "audio.mp3", "audio/mp3", use_container_width=True)
 
     # >>> SRT MODE <<<
     with tab2:
