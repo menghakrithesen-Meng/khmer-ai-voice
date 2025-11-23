@@ -1,0 +1,20 @@
+{
+  "KHM-AC0X9986": {
+    "1": {
+      "eng": "Edge-TTS",
+      "vc_lbl": "Piseth (Khmer)",
+      "rate": 21,
+      "pitch": 18,
+      "pad": 80.0,
+      "name": "b1"
+    },
+    "2": {
+      "eng": "Edge-TTS",
+      "vc_lbl": "Sreymom (Khmer)",
+      "rate": 27,
+      "pitch": 18,
+      "pad": 80.0,
+      "name": "s1"
+    }
+  }
+}

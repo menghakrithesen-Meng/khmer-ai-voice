@@ -1,0 +1,5 @@
+streamlit
+edge-tts
+gTTS
+pydub
+extra-streamlit-components
