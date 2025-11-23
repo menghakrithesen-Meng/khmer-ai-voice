@@ -254,9 +254,17 @@ if not st.session_state.auth:
 
 # VOICES
 VOICES = {
+    # ✅ Khmer native voices
     "Sreymom (Khmer)": "km-KH-SreymomNeural",
     "Piseth (Khmer)": "km-KH-PisethNeural",
-    "Emma (English)": "en-US-EmmaMultilingualNeural",
+
+    # ✅ Multilingual voices (អាចអានខ្មែរបាន បែប accent ក្រៅ)
+    "Emma (EN Multi)": "en-US-EmmaMultilingualNeural",
+    "William (EN AU Multi)": "en-AU-WilliamMultilingualNeural",
+    "Jenny (EN Multi)": "en-US-JennyMultilingualNeural",
+    "Guy (EN Multi)": "en-US-GuyMultilingualNeural",
+
+    # Chinese (good for Chinese + test Khmer)
     "Xiaoxiao (Chinese)": "zh-CN-XiaoxiaoNeural"
 }
 
@@ -522,3 +530,4 @@ with tab2:
 with tab3:
     st.subheader("Gemini Translator (SRT)")
     st.info("Coming Soon...")
+
