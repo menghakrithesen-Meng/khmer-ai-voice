@@ -220,44 +220,56 @@ async def process_srt_with_progress(subs, line_configs, v_opts, pad_ms, progress
     return full
 
 def gen_audio_simple(t, eng, v, r, p, sty, gs, pad):
-    # Create temp file
+    # បង្កើត Temp File សម្រាប់ដាក់សំឡេង
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f: 
         tmp_path = f.name
 
     try:
-        # 1. Generate Raw Audio
+        # 1. ដំណើរការបង្កើតសំឡេង (Generate Raw Audio)
         if eng == "Edge-TTS": 
             async def _do_gen():
-                # ដាក់លក្ខខណ្ឌ៖ បើ Rate ឬ Pitch ស្មើ 0 កុំដាក់វាចូលក្នុងសំណើ
+                # 🛠️ កែសម្រួលថ្មី៖
+                # បើ Speed ឬ Pitch ស្មើ 0 យើងកុំបញ្ជូនវាទៅ Microsoft
+                # ដើម្បីកុំឱ្យមានបញ្ហា Format (+0%)
                 args = {"voice": v}
                 if r != 0: args["rate"] = f"{r:+d}%"
                 if p != 0: args["pitch"] = f"{p:+d}Hz"
                 
+                # បង្កើតការតភ្ជាប់
                 communicate = edge_tts.Communicate(t, **args)
                 await communicate.save(tmp_path)
             
             try:
                 asyncio.run(_do_gen())
             except Exception:
+                # ករណី Asyncio មានបញ្ហា បង្កើត Loop ថ្មី
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 loop.run_until_complete(_do_gen())
                 loop.close()
+                
         else: 
+            # ប្រើ gTTS (Google Translate TTS)
             gTTS(t, lang='km').write_to_fp(open(tmp_path, 'wb'))
         
-        # 2. Verify File
+        # 2. ពិនិត្យមើលថាឯកសារសំឡេងមានឬអត់?
         if not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
-            st.error("❌ Error: Audio file is empty. (Microsoft blocked the request?)")
+            st.error("❌ Error: Microsoft Blocked IP on Streamlit Cloud. Please try running locally.")
             return AudioSegment.silent(duration=0)
 
-        # 3. Add Effects (Pydub)
+        # 3. ដាក់ Effect (Padding + Normalize)
         try:
             seg = AudioSegment.from_file(tmp_path)
-            if eng == "gTTS" and gs != 1.0: seg = seg.speedup(gs)
+            
+            if eng == "gTTS" and gs != 1.0: 
+                seg = seg.speedup(gs)
+            
             pd = AudioSegment.silent(duration=pad)
-            return pd + effects.normalize(seg) + pd
+            final_seg = pd + effects.normalize(seg) + pd
+            return final_seg
+            
         except Exception:
+            # បើ Pydub Error (អត់មាន FFmpeg) ឱ្យប្រើ File ដើមវិញ
             return AudioSegment.from_file(tmp_path) 
 
     except Exception as main_error:
@@ -265,6 +277,7 @@ def gen_audio_simple(t, eng, v, r, p, sty, gs, pad):
         return AudioSegment.silent(duration=0)
     
     finally:
+        # លុប Temp File ចោល
         try: os.remove(tmp_path)
         except: pass
 
@@ -554,5 +567,6 @@ else:
 
     st.markdown("---")
     st.caption("Contact Admin: [Telegram @menghakmc](https://t.me/menghakmc)")
+
 
 
