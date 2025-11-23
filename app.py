@@ -11,7 +11,6 @@ import string
 import random
 import io
 import re
-import uuid  # for browser client_id
 import extra_streamlit_components as stx
 
 # ==========================================
@@ -109,35 +108,13 @@ def get_cookie_manager():
         st.session_state.cookie_manager = stx.CookieManager()
     return st.session_state.cookie_manager
 
-def get_or_create_client_id(cm):
-    """
-    ១ Browser = ១ client_id (រក្សាទុកក្នុង cookie "client_id")
-    """
-    cid = cm.get("client_id")
-    if not cid:
-        cid = str(uuid.uuid4())
-        expires = datetime.datetime.now() + datetime.timedelta(days=365)
-        cm.set("client_id", cid, expires_at=expires)
-    return cid
-
 # --- AUTH ---
-def check_access_key(user_key, client_id=None):
+def check_access_key(user_key):
     keys_db = load_json(KEYS_FILE)
     if user_key not in keys_db:
         return "Invalid Key", 0
     k_data = keys_db[user_key]
-
-    # ⭐ LIMIT: key មួយ ប្រើបានតែ ១ browser (ពេល manual login ទៅ)
-    if client_id is not None:
-        bound_client = k_data.get("client_id")
-        if bound_client is None:
-            # First login: bind key to this browser
-            k_data["client_id"] = client_id
-            save_json(KEYS_FILE, keys_db)
-        elif bound_client != client_id:
-            return "Key already used on another browser", 0
-
-    if k_data["status"] != "active":
+    if k_data.get("status") != "active":
         return "Key Disabled", 0
     
     if not k_data.get("activated_date"):
@@ -165,7 +142,7 @@ def get_user_preset(user_key, slot):
     db = load_json(PRESETS_FILE)
     return db.get(user_key, {}).get(str(slot), None)
 
-# 🔧 Apply preset to one SRT line (logic only; widget sync done before widgets)
+# 🔧 Apply preset to one SRT line
 def apply_preset_to_line(user_key, line_index, slot_id):
     pd = get_user_preset(user_key, slot_id)
     if not pd:
@@ -226,7 +203,8 @@ def parse_srt(content):
 # ==========================================
 # 2. MAIN APP UI
 # ==========================================
-# ADMIN (access by link only: ?view=admin)
+
+# ADMIN (access by URL only: ?view=admin)
 if st.query_params.get("view") == "admin":
     st.title("🔐 Admin Panel")
     pwd = st.text_input("Password", type="password")
@@ -241,29 +219,40 @@ if st.query_params.get("view") == "admin":
         st.json(load_json(KEYS_FILE))
     st.stop()
 
-# APP
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
 cm = get_cookie_manager()
 
-# ⭐ ១ Browser = ១ client_id
-client_id = get_or_create_client_id(cm)
-
+# Init auth state
 if 'auth' not in st.session_state:
     st.session_state.auth = False
+
+# 1) AUTO-LOGIN BY COOKIE
+if not st.session_state.auth:
     ck = cm.get("auth_key")
     if ck:
-        # ❗ AUTO-LOGIN: មិន check client_id ទេ ដើម្បីអោយ Remember ដំណើរការ
         s, d = check_access_key(ck)
         if s == "Valid":
             st.session_state.auth = True
             st.session_state.ukey = ck
             st.session_state.days = d
 
+# 2) AUTO-LOGIN BY URL ?key=... or ?k=...
+if not st.session_state.auth:
+    qp = st.query_params.get("key") or st.query_params.get("k")
+    if qp:
+        s, d = check_access_key(qp)
+        if s == "Valid":
+            st.session_state.auth = True
+            st.session_state.ukey = qp
+            st.session_state.days = d
+            # also drop cookie for future
+            cm.set("auth_key", qp, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
+
+# 3) SHOW LOGIN FORM IF STILL NOT AUTH
 if not st.session_state.auth:
     key = st.text_input("🔑 Access Key", type="password")
     if st.button("Login"):
-        # ❗ MANUAL LOGIN: check client_id → key 1 ប្រើបានតែ 1 browser
-        s, d = check_access_key(key, client_id)
+        s, d = check_access_key(key)
         if s == "Valid":
             st.session_state.auth = True
             st.session_state.ukey = key
@@ -273,18 +262,21 @@ if not st.session_state.auth:
                 key,
                 expires_at=datetime.datetime.now() + datetime.timedelta(days=30)
             )
-            st.success("Login success! (This browser is now bound to this key)")
+            st.success("Login success! (Key remembered on this browser if cookies work)")
             st.rerun()
         else:
-            if s == "Key already used on another browser":
-                st.error("🔒 Key នេះត្រូវបានប្រើលើ browser ផ្សេងរួចហើយ។ Key មួយអាចប្រើបានតែ ១ browser ប៉ុណ្ណោះ។")
-            else:
-                st.error(s)
+            st.error(s)
     
     st.markdown("---")
-    # ❌ Admin Login button removed (use ?view=admin)
-    st.info("For admin: open URL with `?view=admin` (example: http://localhost:8501/?view=admin)")
+    st.info(
+        "Admin: open URL with `?view=admin` (e.g. `http://localhost:8501/?view=admin`).\n\n"
+        "You can also bookmark URL with `?key=YOUR_KEY` to auto-login."
+    )
     st.stop()
+
+# ==========================================
+# 3. AFTER AUTH
+# ==========================================
 
 # VOICES
 VOICES = {
@@ -396,7 +388,7 @@ with tab2:
                     "voice": st.session_state.g_voice,
                     "rate": st.session_state.g_rate,
                     "pitch": st.session_state.g_pitch,
-                    "slot": None,   # no preset yet
+                    "slot": None,
                 })
 
         # 🎭 SRT DEFAULT PRESET (APPLY TO ALL)
@@ -427,19 +419,18 @@ with tab2:
             else:
                 st.warning("Please select a valid preset before applying.")
 
-        # ==== SYNC widget state FROM line_settings (BEFORE widgets are created) ====
+        # SYNC widget state FROM line_settings (BEFORE widgets)
         for idx, cur in enumerate(st.session_state.line_settings):
             st.session_state[f"v_{idx}"] = cur["voice"]
             st.session_state[f"r_{idx}"] = cur["rate"]
             st.session_state[f"p_{idx}"] = cur["pitch"]
 
-        # SRT LINE EDITOR (per-line preset + color)
+        # SRT LINE EDITOR
         with st.container(height=600):
             for idx, sub in enumerate(st.session_state.srt_lines):
                 cur = st.session_state.line_settings[idx]
                 slot = cur.get("slot")
 
-                # Border color & label follow "slot"
                 slot_class = f" slot-{slot}" if slot else ""
                 if slot:
                     pd = get_user_preset(st.session_state.ukey, slot)
@@ -465,7 +456,6 @@ with tab2:
                 rate_key = f"r_{idx}"
                 pitch_key = f"p_{idx}"
 
-                # Controls — value comes from session_state (synced just above)
                 new_v = c_voice.selectbox(
                     "V",
                     list(VOICES.keys()),
@@ -486,7 +476,6 @@ with tab2:
                     label_visibility="collapsed",
                 )
 
-                # Manual change → update logic, keep same slot (color/label)
                 st.session_state.line_settings[idx] = {
                     "voice": new_v,
                     "rate": new_r,
@@ -494,7 +483,6 @@ with tab2:
                     "slot": slot,
                 }
 
-                # Preset Buttons per line
                 with c_presets:
                     cols = st.columns(6)
                     for slot_id in range(1, 7):
@@ -550,15 +538,15 @@ with tab2:
                         pass
                     progress.progress((i+1)/len(st.session_state.srt_lines))
                 
+            except Exception as e:
+                status.error(f"Error: {e}")
+            else:
                 status.success("Done! Audio synced.")
                 buf = io.BytesIO()
                 final_mix.export(buf, format="mp3")
                 buf.seek(0)
                 st.audio(buf)
                 st.download_button("Download Conversation", buf, "conversation.mp3", "audio/mp3")
-            
-            except Exception as e:
-                st.error(f"Error: {e}")
 
 # TAB 3
 with tab3:
