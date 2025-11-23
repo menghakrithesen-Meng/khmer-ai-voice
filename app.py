@@ -11,7 +11,7 @@ import string
 import random
 import io
 import re
-import uuid  # ⭐ NEW: for browser client_id
+import uuid  # for browser client_id
 import extra_streamlit_components as stx
 
 # ==========================================
@@ -127,11 +127,11 @@ def check_access_key(user_key, client_id=None):
         return "Invalid Key", 0
     k_data = keys_db[user_key]
 
-    # ⭐ LIMIT: key មួយ ប្រើបានតែ ១ browser
+    # ⭐ LIMIT: key មួយ ប្រើបានតែ ១ browser (ពេល manual login ទៅ)
     if client_id is not None:
         bound_client = k_data.get("client_id")
         if bound_client is None:
-            # First time: bind key to this browser
+            # First login: bind key to this browser
             k_data["client_id"] = client_id
             save_json(KEYS_FILE, keys_db)
         elif bound_client != client_id:
@@ -182,7 +182,6 @@ async def gen_edge(text, voice, rate, pitch):
     file_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3").name
     rate_str = f"{rate:+d}%" if rate != 0 else "+0%"
     pitch_str = f"{pitch:+d}Hz" if pitch != 0 else "+0Hz"
-    
     communicate = edge_tts.Communicate(text, voice, rate=rate_str, pitch=pitch_str)
     await communicate.save(file_path)
     return file_path
@@ -253,17 +252,17 @@ if 'auth' not in st.session_state:
     st.session_state.auth = False
     ck = cm.get("auth_key")
     if ck:
-        s, d = check_access_key(ck, client_id)
+        # ❗ AUTO-LOGIN: មិន check client_id ទេ ដើម្បីអោយ Remember ដំណើរការ
+        s, d = check_access_key(ck)
         if s == "Valid":
             st.session_state.auth = True
             st.session_state.ukey = ck
             st.session_state.days = d
-        elif s != "Invalid Key":
-            st.warning(s)
 
 if not st.session_state.auth:
     key = st.text_input("🔑 Access Key", type="password")
     if st.button("Login"):
+        # ❗ MANUAL LOGIN: check client_id → key 1 ប្រើបានតែ 1 browser
         s, d = check_access_key(key, client_id)
         if s == "Valid":
             st.session_state.auth = True
@@ -294,7 +293,7 @@ VOICES = {
     "Sreymom (Khmer)": "km-KH-SreymomNeural",
     "Piseth (Khmer)": "km-KH-PisethNeural",
 
-    # Multilingual English voices (អាចអានខ្មែរ បែប accent)
+    # Multilingual English voices
     "Emma (EN Multi)": "en-US-EmmaMultilingualNeural",
     "William (EN AU Multi)": "en-AU-WilliamMultilingualNeural",
     "Jenny (EN Multi)": "en-US-JennyMultilingualNeural",
