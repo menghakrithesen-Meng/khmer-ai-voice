@@ -142,17 +142,24 @@ def get_user_preset(user_key, slot):
     db = load_json(PRESETS_FILE)
     return db.get(user_key, {}).get(str(slot), None)
 
-# 🔧 Apply preset to one SRT line (voice + rate + pitch + remember slot)
+# 🔧 Apply preset to one SRT line (voice + rate + pitch + remember slot + sync widgets)
 def apply_preset_to_line(user_key, line_index, slot_id):
     pd = get_user_preset(user_key, slot_id)
     if not pd:
         return
+    
+    # Update logic state
     st.session_state.line_settings[line_index] = {
         "voice": pd["voice"],
         "rate": pd["rate"],
         "pitch": pd["pitch"],
-        "slot": slot_id,   # remember which preset slot
+        "slot": slot_id,   # remember which preset slot (for color/label)
     }
+
+    # Sync widget state so UI (selectbox / number_input) ក្លាយតាម preset
+    st.session_state[f"v_{line_index}"] = pd["voice"]
+    st.session_state[f"r_{line_index}"] = pd["rate"]
+    st.session_state[f"p_{line_index}"] = pd["pitch"]
 
 # --- AUDIO ENGINE ---
 async def gen_edge(text, voice, rate, pitch):
@@ -278,7 +285,8 @@ with st.sidebar:
     if "g_pitch" not in st.session_state:
         st.session_state.g_pitch = 0
     
-    v_sel = st.selectbox("Voice", list(VOICES.keys()), index=list(VOICES.keys()).index(st.session_state.g_voice))
+    v_sel = st.selectbox("Voice", list(VOICES.keys()),
+                         index=list(VOICES.keys()).index(st.session_state.g_voice))
     r_sel = st.slider("Speed", -50, 50, value=st.session_state.g_rate)
     p_sel = st.slider("Pitch", -50, 50, value=st.session_state.g_pitch)
     pad_sel = st.number_input("Padding (ms)", value=80)
@@ -350,7 +358,7 @@ with tab2:
                     "voice": st.session_state.g_voice,
                     "rate": st.session_state.g_rate,
                     "pitch": st.session_state.g_pitch,
-                    "slot": None,   # no preset used yet
+                    "slot": None,   # no preset yet
                 })
 
         # 🎭 SRT DEFAULT PRESET (APPLY TO ALL)
@@ -409,24 +417,29 @@ with tab2:
 
                 c_voice, c_rate, c_pitch, c_presets = st.columns([2, 1, 1, 4])
 
-                # Controls (start from current state)
+                # Controls — use widget keys v_idx / r_idx / p_idx (state will be
+                # overridden by st.session_state[...] when apply_preset_to_line is called)
                 new_v = c_voice.selectbox(
-                    "V", 
-                    list(VOICES.keys()), 
-                    index=list(VOICES.keys()).index(cur['voice']), 
-                    key=f"v_{idx}", 
-                    label_visibility="collapsed"
+                    "V",
+                    list(VOICES.keys()),
+                    index=list(VOICES.keys()).index(cur['voice']),
+                    key=f"v_{idx}",
+                    label_visibility="collapsed",
                 )
                 new_r = c_rate.number_input(
-                    "R", -50, 50, value=cur['rate'], key=f"r_{idx}", 
-                    label_visibility="collapsed"
+                    "R", -50, 50,
+                    value=cur['rate'],
+                    key=f"r_{idx}",
+                    label_visibility="collapsed",
                 )
                 new_p = c_pitch.number_input(
-                    "P", -50, 50, value=cur['pitch'], key=f"p_{idx}", 
-                    label_visibility="collapsed"
+                    "P", -50, 50,
+                    value=cur['pitch'],
+                    key=f"p_{idx}",
+                    label_visibility="collapsed",
                 )
 
-                # Manual change → update voice/rate/pitch BUT keep same slot (color not lost)
+                # Manual change → update voice/rate/pitch BUT keep slot (color/label not lost)
                 st.session_state.line_settings[idx] = {
                     "voice": new_v,
                     "rate": new_r,
@@ -454,7 +467,6 @@ with tab2:
                             help=f"Apply: {full_name}"
                         ):
                             if pd:
-                                # Apply preset (voice/rate/pitch + slot) to this line
                                 apply_preset_to_line(st.session_state.ukey, idx, slot_id)
                                 st.rerun()
 
