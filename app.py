@@ -302,11 +302,13 @@ with tab1:
                     st.error(f"Error: {e}")
 
 # 2. SRT MULTI-SPEAKER
+# 2. SRT MULTI-SPEAKER
 with tab2:
     st.info("SRT Mode: Adjust voice for each line. Audio will sync to SRT time.")
     srt_file = st.file_uploader("Upload SRT", type="srt", key="srt_up")
     
     if srt_file:
+        # INIT SRT STATE (ដដែល)
         if "srt_lines" not in st.session_state or st.session_state.get("last_srt") != srt_file.name:
             content = srt_file.getvalue().decode("utf-8")
             st.session_state.srt_lines = parse_srt(content)
@@ -321,17 +323,72 @@ with tab2:
                     "active_slot": None
                 })
 
+        # ===============================
+        # 🎭 SRT DEFAULT PRESET (NEW)
+        # ===============================
+        st.markdown("#### 🎭 SRT Default Preset")
+
+        preset_options = ["-- No Preset --"]
+        preset_map = {}
+        for i in range(1, 7):
+            pd = get_user_preset(st.session_state.ukey, i)
+            if pd:
+                name = f"Slot {i}: {pd.get('name', f'Slot {i}')}"
+                preset_options.append(name)
+                preset_map[name] = (i, pd)
+
+        srt_default_preset = st.selectbox(
+            "Choose preset to apply to ALL SRT lines (optional)",
+            preset_options,
+            key="srt_default_preset"
+        )
+
+        if st.button("Apply preset to all lines"):
+            if srt_default_preset in preset_map:
+                slot_id, pd = preset_map[srt_default_preset]
+                # អាប់ដេត setting របស់ SRT ឲ្យដូច preset
+                for idx in range(len(st.session_state.srt_lines)):
+                    st.session_state.line_settings[idx] = {
+                        "voice": pd['voice'],
+                        "rate": pd['rate'],
+                        "pitch": pd['pitch'],
+                        "active_slot": slot_id
+                    }
+                st.success(f"Applied {srt_default_preset} to all lines ✅")
+                st.rerun()
+            else:
+                st.warning("Please select a valid preset before applying.")
+
+        # ===============================
+        # SRT LINE EDITOR (ដដែល តែបន្តខាងក្រោម)
+        # ===============================
         with st.container(height=600):
             for idx, sub in enumerate(st.session_state.srt_lines):
-                st.markdown(f"<div class='srt-box'><b>#{idx+1}</b> <small>Time: {sub['start']}ms</small><br>{sub['text']}</div>", unsafe_allow_html=True)
+                st.markdown(
+                    f"<div class='srt-box'><b>#{idx+1}</b> "
+                    f"<small>Time: {sub['start']}ms</small><br>{sub['text']}</div>",
+                    unsafe_allow_html=True
+                )
                 
                 c_voice, c_rate, c_pitch, c_presets = st.columns([2, 1, 1, 4])
                 cur = st.session_state.line_settings[idx]
                 
                 # Controls
-                new_v = c_voice.selectbox("V", list(VOICES.keys()), index=list(VOICES.keys()).index(cur['voice']), key=f"v_{idx}", label_visibility="collapsed")
-                new_r = c_rate.number_input("R", -50, 50, value=cur['rate'], key=f"r_{idx}", label_visibility="collapsed")
-                new_p = c_pitch.number_input("P", -50, 50, value=cur['pitch'], key=f"p_{idx}", label_visibility="collapsed")
+                new_v = c_voice.selectbox(
+                    "V", 
+                    list(VOICES.keys()), 
+                    index=list(VOICES.keys()).index(cur['voice']), 
+                    key=f"v_{idx}", 
+                    label_visibility="collapsed"
+                )
+                new_r = c_rate.number_input(
+                    "R", -50, 50, value=cur['rate'], key=f"r_{idx}", 
+                    label_visibility="collapsed"
+                )
+                new_p = c_pitch.number_input(
+                    "P", -50, 50, value=cur['pitch'], key=f"p_{idx}", 
+                    label_visibility="collapsed"
+                )
                 
                 # Detect Manual Change
                 active_slot = cur.get('active_slot')
@@ -339,24 +396,29 @@ with tab2:
                     active_slot = None
                 
                 # Save State
-                st.session_state.line_settings[idx] = {"voice": new_v, "rate": new_r, "pitch": new_p, "active_slot": active_slot}
+                st.session_state.line_settings[idx] = {
+                    "voice": new_v, 
+                    "rate": new_r, 
+                    "pitch": new_p, 
+                    "active_slot": active_slot
+                }
 
-                # Preset Buttons
+                # Preset Buttons (ដដែល តែ clean)
                 with c_presets:
                     cols = st.columns(6)
                     for slot_id in range(1, 7):
                         pd = get_user_preset(st.session_state.ukey, slot_id)
-                        
-                        # FIX HERE: Correctly define btn_label
                         full_name = pd['name'] if pd and pd.get('name') else str(slot_id)
-                        btn_label = full_name
-                        if len(btn_label) > 4: btn_label = btn_label[:4]
+                        btn_label = full_name if len(full_name) <= 4 else full_name[:4]
                         
-                        # Color logic
                         b_type = "primary" if active_slot == slot_id else "secondary"
                         
-                        # FIX HERE: Removed undefined 'btn_label' in help string
-                        if cols[slot_id-1].button(btn_label, key=f"btn_{idx}_{slot_id}", type=b_type, help=f"Apply: {full_name}"):
+                        if cols[slot_id-1].button(
+                            btn_label, 
+                            key=f"btn_{idx}_{slot_id}", 
+                            type=b_type, 
+                            help=f"Apply: {full_name}"
+                        ):
                             if pd:
                                 st.session_state.line_settings[idx] = {
                                     "voice": pd['voice'],
@@ -366,11 +428,13 @@ with tab2:
                                 }
                                 st.rerun()
 
+        # ===============================
+        # GENERATE FULL AUDIO (ដូចចាស់)
+        # ===============================
         if st.button("🚀 Generate Full Audio (Strict Sync)", type="primary"):
             progress = st.progress(0)
             status = st.empty()
             
-            # Calculate Duration
             last_start = st.session_state.srt_lines[-1]['start']
             final_mix = AudioSegment.silent(duration=last_start + 10000)
             
@@ -382,15 +446,21 @@ with tab2:
                     status.text(f"Processing line {i+1}...")
                     s = st.session_state.line_settings[i]
                     
-                    # Generate with SPECIFIC settings
-                    raw_path = loop.run_until_complete(gen_edge(sub['text'], VOICES[s['voice']], s['rate'], s['pitch']))
+                    raw_path = loop.run_until_complete(
+                        gen_edge(
+                            sub['text'], 
+                            VOICES[s['voice']], 
+                            s['rate'], 
+                            s['pitch']
+                        )
+                    )
                     clip = AudioSegment.from_file(raw_path)
-                    
-                    # Sync Overlay
                     final_mix = final_mix.overlay(clip, position=sub['start'])
                     
-                    try: os.remove(raw_path)
-                    except: pass
+                    try:
+                        os.remove(raw_path)
+                    except:
+                        pass
                     progress.progress((i+1)/len(st.session_state.srt_lines))
                 
                 status.success("Done! Audio synced.")
@@ -402,6 +472,8 @@ with tab2:
             except Exception as e:
                 st.error(f"Error: {e}")
 
+
 with tab3:
     st.subheader("Gemini Translator (SRT)")
     st.info("Coming Soon...")
+
