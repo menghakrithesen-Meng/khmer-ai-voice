@@ -11,6 +11,7 @@ import string
 import random
 import io
 import re
+import uuid  # ⭐ NEW: for browser client_id
 import extra_streamlit_components as stx
 
 # ==========================================
@@ -108,12 +109,34 @@ def get_cookie_manager():
         st.session_state.cookie_manager = stx.CookieManager()
     return st.session_state.cookie_manager
 
+def get_or_create_client_id(cm):
+    """
+    ១ Browser = ១ client_id (រក្សាទុកក្នុង cookie "client_id")
+    """
+    cid = cm.get("client_id")
+    if not cid:
+        cid = str(uuid.uuid4())
+        expires = datetime.datetime.now() + datetime.timedelta(days=365)
+        cm.set("client_id", cid, expires_at=expires)
+    return cid
+
 # --- AUTH ---
-def check_access_key(user_key):
+def check_access_key(user_key, client_id=None):
     keys_db = load_json(KEYS_FILE)
     if user_key not in keys_db:
         return "Invalid Key", 0
     k_data = keys_db[user_key]
+
+    # ⭐ LIMIT: key មួយ ប្រើបានតែ ១ browser
+    if client_id is not None:
+        bound_client = k_data.get("client_id")
+        if bound_client is None:
+            # First time: bind key to this browser
+            k_data["client_id"] = client_id
+            save_json(KEYS_FILE, keys_db)
+        elif bound_client != client_id:
+            return "Key already used on another browser", 0
+
     if k_data["status"] != "active":
         return "Key Disabled", 0
     
@@ -142,7 +165,7 @@ def get_user_preset(user_key, slot):
     db = load_json(PRESETS_FILE)
     return db.get(user_key, {}).get(str(slot), None)
 
-# 🔧 Apply preset to one SRT line (update logic only; widget state sync will happen BEFORE widgets)
+# 🔧 Apply preset to one SRT line (logic only; widget sync done before widgets)
 def apply_preset_to_line(user_key, line_index, slot_id):
     pd = get_user_preset(user_key, slot_id)
     if not pd:
@@ -151,7 +174,7 @@ def apply_preset_to_line(user_key, line_index, slot_id):
         "voice": pd["voice"],
         "rate": pd["rate"],
         "pitch": pd["pitch"],
-        "slot": slot_id,   # remember which preset for color/label
+        "slot": slot_id,   # for color/label
     }
 
 # --- AUDIO ENGINE ---
@@ -223,28 +246,41 @@ if st.query_params.get("view") == "admin":
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
 cm = get_cookie_manager()
 
+# ⭐ ១ Browser = ១ client_id
+client_id = get_or_create_client_id(cm)
+
 if 'auth' not in st.session_state:
     st.session_state.auth = False
     ck = cm.get("auth_key")
     if ck:
-        s, d = check_access_key(ck)
+        s, d = check_access_key(ck, client_id)
         if s == "Valid":
             st.session_state.auth = True
             st.session_state.ukey = ck
             st.session_state.days = d
+        elif s != "Invalid Key":
+            st.warning(s)
 
 if not st.session_state.auth:
     key = st.text_input("🔑 Access Key", type="password")
     if st.button("Login"):
-        s, d = check_access_key(key)
+        s, d = check_access_key(key, client_id)
         if s == "Valid":
             st.session_state.auth = True
             st.session_state.ukey = key
             st.session_state.days = d
-            cm.set("auth_key", key, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
+            cm.set(
+                "auth_key",
+                key,
+                expires_at=datetime.datetime.now() + datetime.timedelta(days=30)
+            )
+            st.success("Login success! (This browser is now bound to this key)")
             st.rerun()
         else:
-            st.error(s)
+            if s == "Key already used on another browser":
+                st.error("🔒 Key នេះត្រូវបានប្រើលើ browser ផ្សេងរួចហើយ។ Key មួយអាចប្រើបានតែ ១ browser ប៉ុណ្ណោះ។")
+            else:
+                st.error(s)
     
     st.markdown("---")
     if st.button("🔐 Admin Login"):
@@ -254,13 +290,18 @@ if not st.session_state.auth:
 
 # VOICES
 VOICES = {
-    # ✅ Khmer native voices
+    # Khmer native
     "Sreymom (Khmer)": "km-KH-SreymomNeural",
     "Piseth (Khmer)": "km-KH-PisethNeural",
 
-    # ✅ Multilingual voices (អាចអានខ្មែរបាន បែប accent ក្រៅ)
+    # Multilingual English voices (អាចអានខ្មែរ បែប accent)
     "Emma (EN Multi)": "en-US-EmmaMultilingualNeural",
     "William (EN AU Multi)": "en-AU-WilliamMultilingualNeural",
+    "Jenny (EN Multi)": "en-US-JennyMultilingualNeural",
+    "Guy (EN Multi)": "en-US-GuyMultilingualNeural",
+
+    # Chinese
+    "Xiaoxiao (Chinese)": "zh-CN-XiaoxiaoNeural",
 }
 
 # --- SIDEBAR ---
@@ -525,5 +566,3 @@ with tab2:
 with tab3:
     st.subheader("Gemini Translator (SRT)")
     st.info("Coming Soon...")
-
-
