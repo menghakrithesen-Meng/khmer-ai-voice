@@ -329,6 +329,7 @@ with tab1:
                     
                     buf = io.BytesIO()
                     final.export(buf, format="mp3")
+                    buf.seek(0)
                     st.audio(buf)
                     st.download_button("Download MP3", buf, "audio.mp3", "audio/mp3")
                 except Exception as e:
@@ -497,38 +498,6 @@ with tab2:
                     except:
                         pass
                     progress.progress((i+1)/len(st.session_state.srt_lines))
-                        # GENERATE FULL AUDIO
-        if st.button("🚀 Generate Full Audio (Strict Sync)", type="primary"):
-            progress = st.progress(0)
-            status = st.empty()
-            
-            last_start = st.session_state.srt_lines[-1]['start']
-            final_mix = AudioSegment.silent(duration=last_start + 10000)
-            
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                
-                for i, sub in enumerate(st.session_state.srt_lines):
-                    status.text(f"Processing line {i+1}...")
-                    s = st.session_state.line_settings[i]
-                    
-                    raw_path = loop.run_until_complete(
-                        gen_edge(
-                            sub['text'], 
-                            VOICES[s['voice']], 
-                            s['rate'], 
-                            s['pitch']
-                        )
-                    )
-                    clip = AudioSegment.from_file(raw_path)
-                    final_mix = final_mix.overlay(clip, position=sub['start'])
-                    
-                    try:
-                        os.remove(raw_path)
-                    except:
-                        pass
-                    progress.progress((i+1)/len(st.session_state.srt_lines))
                 
                 status.success("Done! Audio synced.")
                 buf = io.BytesIO()
@@ -544,7 +513,3 @@ with tab2:
 with tab3:
     st.subheader("Gemini Translator (SRT)")
     st.info("Coming Soon...")
-
-           
-
-
