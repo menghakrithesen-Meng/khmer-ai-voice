@@ -319,7 +319,12 @@ with tab2:
                 new_r = c_rate.number_input("Rate", -50, 50, value=current_s['rate'], key=k_r, label_visibility="collapsed")
                 new_p = c_pitch.number_input("Pitch", -50, 50, value=current_s['pitch'], key=k_p, label_visibility="collapsed")
                 
-                st.session_state.line_settings[idx] = {"voice": new_v, "rate": new_r, "pitch": new_p}
+                # Manual Change -> Reset active slot
+                active = current_s.get('active_slot')
+                if new_v != current_s['voice'] or new_r != current_s['rate'] or new_p != current_s['pitch']:
+                    active = None
+                
+                st.session_state.line_settings[idx] = {"voice": new_v, "rate": new_r, "pitch": new_p, "active_slot": active}
 
                 # PRESET BUTTONS (SHOW NAMES)
                 with c_presets:
@@ -331,12 +336,16 @@ with tab2:
                         # Limit Text Length
                         if len(btn_label) > 4: btn_label = btn_label[:4]
                         
-                        if cols[slot_id-1].button(btn_label, key=f"btn_{idx}_{slot_id}", help=f"Apply: {btn_label}"):
+                        # Color logic
+                        b_type = "primary" if active == slot_id else "secondary"
+                        
+                        if cols[slot_id-1].button(btn_label, key=f"btn_{idx}_{slot_id}", type=b_type, help=f"Apply: {btn_label}"):
                             if p_data:
                                 st.session_state.line_settings[idx] = {
                                     "voice": p_data['voice'],
                                     "rate": p_data['rate'],
-                                    "pitch": p_data['pitch']
+                                    "pitch": p_data['pitch'],
+                                    "active_slot": slot_id
                                 }
                                 st.rerun()
 
