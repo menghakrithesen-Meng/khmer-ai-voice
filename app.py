@@ -261,11 +261,6 @@ VOICES = {
     # ✅ Multilingual voices (អាចអានខ្មែរបាន បែប accent ក្រៅ)
     "Emma (EN Multi)": "en-US-EmmaMultilingualNeural",
     "William (EN AU Multi)": "en-AU-WilliamMultilingualNeural",
-    "Jenny (EN Multi)": "en-US-JennyMultilingualNeural",
-    "Guy (EN Multi)": "en-US-GuyMultilingualNeural",
-
-    # Chinese (good for Chinese + test Khmer)
-    "Xiaoxiao (Chinese)": "zh-CN-XiaoxiaoNeural"
 }
 
 # --- SIDEBAR ---
@@ -530,4 +525,5 @@ with tab2:
 with tab3:
     st.subheader("Gemini Translator (SRT)")
     st.info("Coming Soon...")
+
 
