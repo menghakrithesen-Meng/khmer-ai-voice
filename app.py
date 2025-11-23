@@ -11,7 +11,7 @@ import string
 import random
 import io
 import re
-import extra_streamlit_components as stx 
+import extra_streamlit_components as stx
 
 # ==========================================
 # 0. CONFIG & SETUP
@@ -142,7 +142,7 @@ def get_user_preset(user_key, slot):
     db = load_json(PRESETS_FILE)
     return db.get(user_key, {}).get(str(slot), None)
 
-# 🔧 Apply preset to one SRT line
+# Apply preset to one SRT line
 def apply_preset_to_line(user_key, line_index, slot_id):
     pd = get_user_preset(user_key, slot_id)
     if not pd:
@@ -151,7 +151,6 @@ def apply_preset_to_line(user_key, line_index, slot_id):
         "voice": pd["voice"],
         "rate": pd["rate"],
         "pitch": pd["pitch"],
-        "active_slot": slot_id,
     }
 
 # --- AUDIO ENGINE ---
@@ -352,7 +351,6 @@ with tab2:
                     "voice": st.session_state.g_voice,
                     "rate": st.session_state.g_rate,
                     "pitch": st.session_state.g_pitch,
-                    "active_slot": None
                 })
 
         # 🎭 SRT DEFAULT PRESET (APPLY TO ALL)
@@ -383,20 +381,29 @@ with tab2:
             else:
                 st.warning("Please select a valid preset before applying.")
 
-        # SRT LINE EDITOR
+        # SRT LINE EDITOR (with per-line presets)
         with st.container(height=600):
             for idx, sub in enumerate(st.session_state.srt_lines):
                 cur = st.session_state.line_settings[idx]
-                active_slot = cur.get('active_slot')
 
-                # CSS class for color
+                # Detect active_slot by matching V/R/P to presets
+                active_slot = None
+                active_name = None
+                for slot_id in range(1, 7):
+                    pd = get_user_preset(st.session_state.ukey, slot_id)
+                    if not pd:
+                        continue
+                    if (pd["voice"] == cur["voice"] and
+                        pd["rate"]  == cur["rate"]  and
+                        pd["pitch"] == cur["pitch"]):
+                        active_slot = slot_id
+                        active_name = pd.get("name", f"Slot {slot_id}")
+                        break
+
+                # CSS class + label
                 slot_class = f" slot-{active_slot}" if active_slot else ""
-
-                # Preset label
                 if active_slot:
-                    pd = get_user_preset(st.session_state.ukey, active_slot)
-                    preset_name = pd['name'] if pd and pd.get('name') else f"Slot {active_slot}"
-                    preset_html = f"<span class='preset-tag'>Preset: {preset_name}</span>"
+                    preset_html = f"<span class='preset-tag'>Preset: {active_name}</span>"
                 else:
                     preset_html = ""
 
@@ -410,10 +417,10 @@ with tab2:
                     """,
                     unsafe_allow_html=True
                 )
-                
+
                 c_voice, c_rate, c_pitch, c_presets = st.columns([2, 1, 1, 4])
-                
-                # Controls (V/R/P)
+
+                # Controls (V/R/P) from current state
                 new_v = c_voice.selectbox(
                     "V", 
                     list(VOICES.keys()), 
@@ -429,37 +436,31 @@ with tab2:
                     "P", -50, 50, value=cur['pitch'], key=f"p_{idx}", 
                     label_visibility="collapsed"
                 )
-                
-                # បើ user កែ V/R/P ដោយដៃ → clear preset
-                if new_v != cur['voice'] or new_r != cur['rate'] or new_p != cur['pitch']:
-                    st.session_state.line_settings[idx] = {
-                        "voice": new_v,
-                        "rate": new_r,
-                        "pitch": new_p,
-                        "active_slot": None
-                    }
-                    active_slot = None
-                else:
-                    # កុំបាត់ active_slot ប្រសិនបើមិនបានកែ
-                    st.session_state.line_settings[idx]["active_slot"] = active_slot
 
-                # Preset Buttons per line (override after Apply All ក៏បាន)
+                # Update state with manual changes
+                st.session_state.line_settings[idx] = {
+                    "voice": new_v,
+                    "rate": new_r,
+                    "pitch": new_p,
+                }
+
+                # Preset Buttons per line
                 with c_presets:
                     cols = st.columns(6)
                     for slot_id in range(1, 7):
                         pd = get_user_preset(st.session_state.ukey, slot_id)
                         if pd:
-                            full_name = pd['name'] if pd.get('name') else str(slot_id)
+                            full_name = pd.get("name", f"Slot {slot_id}")
                         else:
-                            full_name = f"-"
+                            full_name = "-"
 
                         btn_label = full_name if len(full_name) <= 4 else full_name[:4]
                         b_type = "primary" if active_slot == slot_id else "secondary"
-                        
+
                         if cols[slot_id-1].button(
-                            btn_label, 
-                            key=f"btn_{idx}_{slot_id}", 
-                            type=b_type, 
+                            btn_label,
+                            key=f"btn_{idx}_{slot_id}",
+                            type=b_type,
                             help=f"Apply: {full_name}"
                         ):
                             if pd:
