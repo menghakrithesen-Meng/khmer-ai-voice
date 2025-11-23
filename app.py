@@ -406,7 +406,7 @@ with tab2:
                 
                 c_voice, c_rate, c_pitch, c_presets = st.columns([2, 1, 1, 4])
                 
-                # Controls
+                # Controls (មានតម្លៃតាម state)
                 new_v = c_voice.selectbox(
                     "V", 
                     list(VOICES.keys()), 
@@ -423,7 +423,7 @@ with tab2:
                     label_visibility="collapsed"
                 )
                 
-                # Detect Manual Change
+                # Detect Manual Change → clear preset
                 if new_v != cur['voice'] or new_r != cur['rate'] or new_p != cur['pitch']:
                     active_slot = None
                 
@@ -506,3 +506,5 @@ with tab2:
 with tab3:
     st.subheader("Gemini Translator (SRT)")
     st.info("Coming Soon...")
+
+
