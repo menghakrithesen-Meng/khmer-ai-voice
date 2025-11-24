@@ -213,8 +213,7 @@ if not st.session_state.auth and cookie_key and cookie_token:
         st.session_state.days = days
         st.session_state.my_token = cookie_token
     else:
-        # Token mismatch = duplicate login detected
-        pass
+        pass # Token mismatch = duplicate login detected
 
 # --- 3.3 LOGIN FORM ---
 if not st.session_state.auth:
@@ -257,24 +256,32 @@ if not st.session_state.auth:
     if cookie_key and cookie_token:
         srv_tok = get_server_token(cookie_key)
         if srv_tok and srv_tok != cookie_token:
-             st.warning("⚠️ Session Expired: Key នេះត្រូវបាន Login នៅកន្លែងផ្សេង។")
+             st.warning("⚠️ Session Expired: Key នេះត្រូវបាន Login នៅលើ Browser ផ្សេង។")
 
     st.stop()
 
 
 # ==========================================
-# 4. REAL-TIME SECURITY CHECK
+# 4. REAL-TIME SECURITY CHECK (AUTO SIGN OUT)
 # ==========================================
 if st.session_state.auth:
     # Always check if my token is still the server's active token
     current_valid_token = get_server_token(st.session_state.ukey)
     my_token = st.session_state.get("my_token")
     
+    # ប្រសិនបើ Token ក្នុងដៃយើង មិនដូច Token ក្នុង Server (មានន័យថាមាន Browser ថ្មីចូល)
     if current_valid_token != my_token:
-        st.error("🚨 Session Expired! You logged in on another browser.")
+        st.empty() # Clear អេក្រង់ចាស់ចោល
+        st.error("🚨 Session Expired! You have been logged out because this key was used on another browser.")
+        
+        # Clear local session
         st.session_state.clear()
+        
+        # Delete cookies
         cm.delete("auth_key")
         cm.delete("session_token")
+        
+        # ចាំ 2 វិនាទី រួចទាត់ទៅ Login Form វិញ
         time.sleep(2)
         st.rerun()
 
