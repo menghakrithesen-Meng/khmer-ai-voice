@@ -278,7 +278,7 @@ if st.query_params.get("view") == "admin":
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
 cm = get_cookie_manager()
 
-# --- 3.0: PERSISTENT DEVICE ID SETUP (កែថ្មីត្រង់នេះ) ---
+# --- 3.0: PERSISTENT DEVICE ID SETUP ---
 # យើងត្រូវចាំ Device ID ក្នុង Cookie ដើម្បីកុំឱ្យបាត់ពេល Refresh
 cookie_dev_id = cm.get("device_id")
 
@@ -290,8 +290,11 @@ else:
     if "device_id" not in st.session_state:
         st.session_state.device_id = str(uuid.uuid4())
     
-    # Save ទុក 1 ឆ្នាំ
-    cm.set("device_id", st.session_state.device_id, expires_at=datetime.datetime.now() + datetime.timedelta(days=365))
+    # Save ទុក 1 ឆ្នាំ (ចំណុចសំខាន់៖ ថែម key="set_device_id" ដើម្បីកុំឱ្យជាន់គ្នា)
+    cm.set("device_id", st.session_state.device_id, 
+           expires_at=datetime.datetime.now() + datetime.timedelta(days=365), 
+           key="set_device_id")
+    
     # ចាំបាច់ត្រូវ Stop ដើម្បីឱ្យ Cookie សរសេរចូល Browser សិន
     time.sleep(0.1) 
 
@@ -313,7 +316,6 @@ if not st.session_state.auth:
             st.session_state.ukey = ck_key
             st.session_state.days = days
         else:
-            # កុំបង្ហាញ Error ធំពេកគ្រាន់តែ Warning
             pass 
 
 # Login Form
@@ -330,8 +332,10 @@ if not st.session_state.auth:
             st.session_state.days = days
             
             if remember:
-                # Save Key
-                cm.set("auth_key", key_input, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
+                # Save Key (ចំណុចសំខាន់៖ ថែម key="set_auth_key" ដើម្បីកុំឱ្យជាន់គ្នា)
+                cm.set("auth_key", key_input, 
+                       expires_at=datetime.datetime.now() + datetime.timedelta(days=30), 
+                       key="set_auth_key")
             
             st.success("Login success!")
             time.sleep(0.5)
@@ -339,7 +343,7 @@ if not st.session_state.auth:
         else:
             if "active on another browser" in status:
                 st.error(f"🔒 Key នេះកំពុងជាប់នៅ Browser ផ្សេង (ID ខុសគ្នា)។")
-                # ប៊ូតុងដើម្បី Reset Session (Optional - សម្រាប់ម្ចាស់ Key បើចង់ Force Login)
+                # ប៊ូតុងដើម្បី Reset Session
                 if st.button("Force Login (Clear Old Session)?"):
                      active = load_active_sessions()
                      active[key_input] = current_device_id # ដាក់ ID ថ្មីចូលជំនួស
@@ -501,4 +505,5 @@ with tab2:
 with tab3:
     st.subheader("Gemini Translator")
     st.info("Coming Soon...")
+
 
