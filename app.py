@@ -329,21 +329,27 @@ if not st.session_state.auth and cookie_auth_key:
         # បើ Login មិនកើត (Device ID ខុសគ្នា ឬ Key ផុតកំណត់)
         pass 
 
-# B. LOGIN FORM (បង្ហាញតែពេល Auto Login បរាជ័យ)
+# ==========================================
+# 3.2 LOGIN FORM (Corrected Force Login Logic)
+# ==========================================
 if not st.session_state.auth:
     key_input = st.text_input("🔑 Access Key", type="password", key="login_input")
     remember = st.checkbox("Remember me", value=True)
     
+    # ចុច Login
     if st.button("Login", type="primary"):
         status, days = login_logic(key_input, current_device_id)
         
         if status == "Valid":
+            # Login ជោគជ័យ
             st.session_state.auth = True
             st.session_state.ukey = key_input
             st.session_state.days = days
             
+            # Clear Error ចាស់ចោល (បើមាន)
+            st.session_state.login_error = None
+            
             if remember:
-                # Save Key
                 cm.set("auth_key", key_input, 
                        expires_at=datetime.datetime.now() + datetime.timedelta(days=30), 
                        key="set_auth_key")
@@ -352,17 +358,32 @@ if not st.session_state.auth:
             time.sleep(0.5)
             st.rerun()
         else:
+            # Login បរាជ័យ
             if "active on another browser" in status:
-                st.error(f"🔒 Key នេះកំពុងជាប់នៅ Browser ផ្សេង។")
-                # Option: Reset Session
-                if st.button("Force Login (Clear Old Session)?"):
-                     active = load_active_sessions()
-                     active[key_input] = current_device_id
-                     save_active_sessions(active)
-                     st.success("Session reset! Please click Login again.")
+                # ដាក់ចូល session state ដើម្បីឱ្យវាចាំថាមាន Error នេះ
+                st.session_state.login_error = "duplicate"
+                st.session_state.error_key = key_input # ចាំ Key ទុកសម្រាប់ Force Login
             else:
                 st.error(status)
-    
+
+    # --- ផ្នែក Force Login (នៅក្រៅប៊ូតុង Login) ---
+    if st.session_state.get("login_error") == "duplicate":
+        st.error("🔒 Key នេះកំពុងជាប់នៅ Browser ផ្សេង។ តើអ្នកចង់ទាត់ Device ចាស់ចេញទេ?")
+        
+        if st.button("Force Login (Clear Old Session)?"):
+             # Logic ទាត់ Device ចាស់ចេញ
+             target_key = st.session_state.get("error_key", key_input)
+             active = load_active_sessions()
+             active[target_key] = current_device_id # ដាក់ ID បច្ចុប្បន្នចូល
+             save_active_sessions(active)
+             
+             # Clear Error
+             st.session_state.login_error = None
+             
+             st.success("Session has been reset! Please click Login again.")
+             time.sleep(1)
+             st.rerun()
+            
     st.stop()
 
 # ==========================================
@@ -516,6 +537,7 @@ with tab2:
 with tab3:
     st.subheader("Gemini Translator")
     st.info("Coming Soon...")
+
 
 
 
