@@ -20,6 +20,7 @@ st.set_page_config(page_title="Khmer AI Voice Pro", page_icon="🎙️", layout=
 
 KEYS_FILE = "web_keys.json"
 PRESETS_FILE = "user_presets.json"
+ACTIVE_FILE = "active_sessions.json"  # 🔐 key -> True (កំពុងប្រើ)
 
 # 🎨 CUSTOM CSS
 st.markdown("""
@@ -108,7 +109,17 @@ def get_cookie_manager():
         st.session_state.cookie_manager = stx.CookieManager()
     return st.session_state.cookie_manager
 
-# --- AUTH (ដូចកូដដើម) ---
+# --- ACTIVE KEYS (១ key អាចប្រើបានតែមួយក្នុងពេលតែមួយ) ---
+def load_active_sessions():
+    data = load_json(ACTIVE_FILE)
+    if isinstance(data, dict):
+        return data
+    return {}
+
+def save_active_sessions(data):
+    save_json(ACTIVE_FILE, data)
+
+# --- AUTH ---
 def check_access_key(user_key):
     keys_db = load_json(KEYS_FILE)
     if user_key not in keys_db:
@@ -128,6 +139,46 @@ def check_access_key(user_key):
     if left < 0:
         return "Expired", 0
     return "Valid", left
+
+def login_manual(user_key):
+    """
+    Login ពេលចុចប៊ូតុង Login
+    ✅ Check lifetime
+    ✅ Check key in use (ACTIVE_FILE)
+    """
+    status, days = check_access_key(user_key)
+    if status != "Valid":
+        return status, days
+
+    active = load_active_sessions()
+    if user_key in active:
+        return "Key already in use", days
+
+    active[user_key] = True
+    save_active_sessions(active)
+    return "Valid", days
+
+def login_from_cookie(user_key):
+    """
+    Auto Login ពេលមាន cookie auth_key
+    ✅ Respect lifetime
+    ✅ បើ ACTIVE_FILE មិនមាន key នោះទេ → បន្ថែមវិញ
+    ❌ មិន Check 'already in use' ទេ ដើម្បីអោយ browser ដើម Remember បាន
+    """
+    status, days = check_access_key(user_key)
+    if status != "Valid":
+        return status, days
+    active = load_active_sessions()
+    if user_key not in active:
+        active[user_key] = True
+        save_active_sessions(active)
+    return "Valid", days
+
+def logout_key(user_key):
+    active = load_active_sessions()
+    if user_key in active:
+        del active[user_key]
+        save_active_sessions(active)
 
 # --- PRESETS ---
 def save_user_preset(user_key, slot, data, name):
@@ -200,7 +251,7 @@ def parse_srt(content):
     return subs
 
 # ==========================================
-# 2. ADMIN PANEL (?view=admin)
+# 2. ADMIN PANEL (?view=admin) – មិនបង្ហាញក្នុង UI
 # ==========================================
 if st.query_params.get("view") == "admin":
     st.title("🔐 Admin Panel")
@@ -223,7 +274,7 @@ if st.query_params.get("view") == "admin":
     st.stop()
 
 # ==========================================
-# 3. AUTH FLOW (Cookie Remember ដូចដើម)
+# 3. AUTH FLOW (Cookie Remember + ACTIVE_FILE)
 # ==========================================
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
 cm = get_cookie_manager()
@@ -231,21 +282,24 @@ cm = get_cookie_manager()
 if "auth" not in st.session_state:
     st.session_state.auth = False
 
-# 3.1 AUTO LOGIN BY COOKIE
+# 3.1 AUTO LOGIN BY COOKIE (Remember key ក្នុង browser)
 if not st.session_state.auth:
     ck = cm.get("auth_key")
     if ck:
-        s, d = check_access_key(ck)
+        s, d = login_from_cookie(ck)
         if s == "Valid":
             st.session_state.auth = True
             st.session_state.ukey = ck
             st.session_state.days = d
+        else:
+            # key ខូច/ផុតកំណត់ → លុប cookie
+            cm.delete("auth_key")
 
 # 3.2 LOGIN FORM
 if not st.session_state.auth:
     key = st.text_input("🔑 Access Key", type="password")
     if st.button("Login"):
-        s, d = check_access_key(key)
+        s, d = login_manual(key)
         if s == "Valid":
             st.session_state.auth = True
             st.session_state.ukey = key
@@ -259,10 +313,11 @@ if not st.session_state.auth:
             st.success("Login success!")
             st.rerun()
         else:
-            st.error(s)
+            if s == "Key already in use":
+                st.error("🔒 Key នេះកំពុងតែប្រើនៅលើ Device/Browser ផ្សេង។")
+            else:
+                st.error(s)
 
-    st.markdown("---")
-    st.info("Admin:បើកជាមួយ `?view=admin`")
     st.stop()
 
 # ==========================================
@@ -289,10 +344,18 @@ VOICES = {
 with st.sidebar:
     st.success(f"✅ Active: {st.session_state.days} Days")
 
-    if st.button("Logout"):
-        cm.delete("auth_key")
-        st.session_state.clear()
-        st.rerun()
+    col_logout, col_close = st.columns(2)
+    with col_logout:
+        if st.button("Logout"):
+            # clear active key + cookie
+            logout_key(st.session_state.ukey)
+            cm.delete("auth_key")
+            st.session_state.clear()
+            st.rerun()
+    with col_close:
+        if st.button("🛑 Close Console"):
+            # បិទ streamlit process (Termux console បិទ app)
+            os._exit(0)
 
     st.divider()
     st.subheader("⚙️ Global Settings")
