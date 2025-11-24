@@ -20,9 +20,8 @@ st.set_page_config(page_title="Khmer AI Voice Pro", page_icon="🎙️", layout=
 
 KEYS_FILE = "web_keys.json"
 PRESETS_FILE = "user_presets.json"
-ACTIVE_FILE = "active_sessions.json"  # key -> True (កំពុងប្រើ)
 
-# 🧁 Cookie Manager (GLOBAL – កុំដាក់ក្នុង session_state)
+# 🧁 Cookie Manager (GLOBAL)
 cookie_manager = stx.CookieManager()
 
 # 🎨 CUSTOM CSS
@@ -107,16 +106,6 @@ def save_json(path, data):
     except Exception:
         pass
 
-# --- ACTIVE KEYS (១ key អាចប្រើបានតែមួយក្នុងពេលតែមួយ) ---
-def load_active_sessions():
-    data = load_json(ACTIVE_FILE)
-    if isinstance(data, dict):
-        return data
-    return {}
-
-def save_active_sessions(data):
-    save_json(ACTIVE_FILE, data)
-
 # --- AUTH ---
 def check_access_key(user_key):
     keys_db = load_json(KEYS_FILE)
@@ -137,46 +126,6 @@ def check_access_key(user_key):
     if left < 0:
         return "Expired", 0
     return "Valid", left
-
-def login_manual(user_key):
-    """
-    Login ពេលចុចប៊ូតុង Login
-    ✅ Check lifetime
-    ✅ Check key in use (ACTIVE_FILE)
-    """
-    status, days = check_access_key(user_key)
-    if status != "Valid":
-        return status, days
-
-    active = load_active_sessions()
-    if user_key in active:
-        return "Key already in use", days
-
-    active[user_key] = True
-    save_active_sessions(active)
-    return "Valid", days
-
-def login_from_cookie(user_key):
-    """
-    Auto Login ពេលមាន cookie auth_key
-    ✅ Respect lifetime
-    ✅ បើ ACTIVE_FILE មិនមាន key នោះទេ → បន្ថែមវិញ
-    ❌ មិន Check 'already in use' ទេ ដើម្បីអោយ browser ដើម Remember បាន
-    """
-    status, days = check_access_key(user_key)
-    if status != "Valid":
-        return status, days
-    active = load_active_sessions()
-    if user_key not in active:
-        active[user_key] = True
-        save_active_sessions(active)
-    return "Valid", days
-
-def logout_key(user_key):
-    active = load_active_sessions()
-    if user_key in active:
-        del active[user_key]
-        save_active_sessions(active)
 
 # --- PRESETS ---
 def save_user_preset(user_key, slot, data, name):
@@ -249,7 +198,7 @@ def parse_srt(content):
     return subs
 
 # ==========================================
-# 2. ADMIN PANEL (?view=admin) – មិនបង្ហាញក្នុង UI
+# 2. ADMIN PANEL (?view=admin) – មិនបង្ហាញក្នុង UI User
 # ==========================================
 if st.query_params.get("view") == "admin":
     st.title("🔐 Admin Panel")
@@ -272,18 +221,18 @@ if st.query_params.get("view") == "admin":
     st.stop()
 
 # ==========================================
-# 3. AUTH FLOW (Cookie Remember + ACTIVE_FILE)
+# 3. AUTH FLOW (Remember KEY via Cookie)
 # ==========================================
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
 
 if "auth" not in st.session_state:
     st.session_state.auth = False
 
-# 3.1 AUTO LOGIN BY COOKIE (Remember key ក្នុង browser)
+# 3.1 AUTO LOGIN BY COOKIE
 if not st.session_state.auth:
     ck = cookie_manager.get("auth_key")
     if ck:
-        s, d = login_from_cookie(ck)
+        s, d = check_access_key(ck)
         if s == "Valid":
             st.session_state.auth = True
             st.session_state.ukey = ck
@@ -295,12 +244,11 @@ if not st.session_state.auth:
 if not st.session_state.auth:
     key = st.text_input("🔑 Access Key", type="password")
     if st.button("Login"):
-        s, d = login_manual(key)
+        s, d = check_access_key(key)
         if s == "Valid":
             st.session_state.auth = True
             st.session_state.ukey = key
             st.session_state.days = d
-            # ⭐ set cookie remember
             cookie_manager.set(
                 "auth_key",
                 key,
@@ -309,11 +257,7 @@ if not st.session_state.auth:
             st.success("Login success!")
             st.rerun()
         else:
-            if s == "Key already in use":
-                st.error("🔒 Key នេះកំពុងតែប្រើនៅលើ Device/Browser ផ្សេង។")
-            else:
-                st.error(s)
-
+            st.error(s)
     st.stop()
 
 # ==========================================
@@ -341,7 +285,6 @@ with st.sidebar:
     st.success(f"✅ Active: {st.session_state.days} Days")
 
     if st.button("Logout"):
-        logout_key(st.session_state.ukey)
         cookie_manager.delete("auth_key")
         st.session_state.clear()
         st.rerun()
@@ -626,5 +569,3 @@ with tab2:
 with tab3:
     st.subheader("Gemini Translator (SRT)")
     st.info("Coming Soon...")
-
-
