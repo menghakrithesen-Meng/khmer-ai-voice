@@ -57,22 +57,33 @@ def save_json(path, data):
         with open(path, "w", encoding="utf-8") as f: json.dump(data, f, indent=2, ensure_ascii=False)
     except: pass
 
-# --- ACTIVE SESSION MANAGEMENT (TOKEN SYSTEM) ---
+# --- ACTIVE SESSION MANAGEMENT ---
 def load_active_sessions():
     return load_json(ACTIVE_FILE)
 
 def get_server_token(user_key):
-    """Get current active token from server"""
     active = load_active_sessions()
     return active.get(user_key)
 
-def set_new_session(user_key):
-    """Create new token (Force Login)"""
+def is_key_already_in_use(user_key):
+    """Check if key exists in active_sessions.json"""
+    active = load_active_sessions()
+    return user_key in active
+
+def create_session(user_key):
+    """Create new session token"""
     new_token = str(uuid.uuid4())
     active = load_active_sessions()
     active[user_key] = new_token
     save_json(ACTIVE_FILE, active)
     return new_token
+
+def delete_session(user_key):
+    """Remove key from active sessions (LOGOUT)"""
+    active = load_active_sessions()
+    if user_key in active:
+        del active[user_key]
+        save_json(ACTIVE_FILE, active)
 
 def check_access_key(user_key):
     keys_db = load_json(KEYS_FILE)
@@ -164,20 +175,18 @@ if st.query_params.get("view") == "admin":
                 save_json(KEYS_FILE, db)
                 st.success(f"New Key: {k}")
         with c2:
-            if st.button("Logout All Users"):
+            if st.button("Reset All Sessions (Emergency)"):
                 save_json(ACTIVE_FILE, {})
                 st.success("All users logged out!")
 
         st.divider()
-        st.write("### 📂 Keys List")
-        st.json(load_json(KEYS_FILE))
-        st.write("### 🟢 Active Sessions")
+        st.write("### 🟢 Active Sessions (Locked)")
         st.json(load_active_sessions())
     st.stop()
 
 
 # ==========================================
-# 3. AUTH FLOW (FIXED: 1 KEY 1 BROWSER + REFRESH)
+# 3. AUTH FLOW (STRICT MODE: LOGOUT REQUIRED)
 # ==========================================
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
 cm = stx.CookieManager(key="main_manager")
@@ -189,7 +198,7 @@ if "retry_count" not in st.session_state:
 cookie_key = cm.get("auth_key")
 cookie_token = cm.get("session_token")
 
-# If no cookie, wait and retry once (prevents fake logout on refresh)
+# Wait for cookie (Retry Mechanism)
 if not cookie_key and st.session_state.retry_count < 1:
     time.sleep(0.5)
     st.session_state.retry_count += 1
@@ -202,7 +211,7 @@ if cookie_key:
 if "auth" not in st.session_state:
     st.session_state.auth = False
 
-# Check if cookie is valid AND matches server token
+# Auto Login: Only if Token matches Server
 if not st.session_state.auth and cookie_key and cookie_token:
     status, days = check_access_key(cookie_key)
     server_token = get_server_token(cookie_key)
@@ -213,11 +222,10 @@ if not st.session_state.auth and cookie_key and cookie_token:
         st.session_state.days = days
         st.session_state.my_token = cookie_token
     else:
-        pass # Token mismatch = duplicate login detected
+        pass # Token mismatch or Key removed from server
 
-# --- 3.3 LOGIN FORM ---
+# --- 3.3 LOGIN FORM (STRICT) ---
 if not st.session_state.auth:
-    # Spinner while retrying
     if st.session_state.retry_count > 0:
         st.spinner("Checking session...")
         st.stop()
@@ -229,13 +237,21 @@ if not st.session_state.auth:
         submitted = st.form_submit_button("Login", type="primary")
 
     if submitted:
+        # 1. Check Key Validity
         status, days = check_access_key(key_input)
         if status != "Valid":
             st.error(status)
             st.stop()
 
-        # FORCE LOGIN: Create NEW token (This kicks out old sessions)
-        new_token = set_new_session(key_input)
+        # 2. STRICT CHECK: Is Key already in use?
+        if is_key_already_in_use(key_input):
+            st.error("⛔ Access Denied!")
+            st.warning("Key នេះកំពុង Online នៅ Browser/Device ផ្សេង។")
+            st.info("សូមទៅចុច Logout ពី Device ចាស់ជាមុនសិន ទើបអាចចូលទីនេះបាន។")
+            st.stop()
+
+        # 3. If not in use, Create Session
+        new_token = create_session(key_input)
         
         st.session_state.auth = True
         st.session_state.ukey = key_input
@@ -251,38 +267,25 @@ if not st.session_state.auth:
         st.success("Login Success!")
         time.sleep(0.5)
         st.rerun()
-
-    # Warning if kicked out
-    if cookie_key and cookie_token:
-        srv_tok = get_server_token(cookie_key)
-        if srv_tok and srv_tok != cookie_token:
-             st.warning("⚠️ Session Expired: Key នេះត្រូវបាន Login នៅលើ Browser ផ្សេង។")
-
+    
     st.stop()
 
 
 # ==========================================
-# 4. REAL-TIME SECURITY CHECK (AUTO SIGN OUT)
+# 4. REAL-TIME SECURITY CHECK
 # ==========================================
 if st.session_state.auth:
-    # Always check if my token is still the server's active token
+    # Check if my token is still valid on server
     current_valid_token = get_server_token(st.session_state.ukey)
     my_token = st.session_state.get("my_token")
     
-    # ប្រសិនបើ Token ក្នុងដៃយើង មិនដូច Token ក្នុង Server (មានន័យថាមាន Browser ថ្មីចូល)
+    # If server token is gone (Logged out) OR changed
     if current_valid_token != my_token:
-        st.empty() # Clear អេក្រង់ចាស់ចោល
-        st.error("🚨 Session Expired! You have been logged out because this key was used on another browser.")
-        
-        # Clear local session
+        st.error("🚨 Session Ended.")
         st.session_state.clear()
-        
-        # Delete cookies
         cm.delete("auth_key")
         cm.delete("session_token")
-        
-        # ចាំ 2 វិនាទី រួចទាត់ទៅ Login Form វិញ
-        time.sleep(2)
+        time.sleep(1)
         st.rerun()
 
 
@@ -301,10 +304,21 @@ VOICES = {
 
 with st.sidebar:
     st.success(f"✅ Active: {st.session_state.days} Days")
+    
+    # LOGOUT BUTTON (CRITICAL FOR STRICT MODE)
     if st.button("Logout", type="primary"):
+        # 1. Remove from JSON (Server)
+        delete_session(st.session_state.ukey)
+        
+        # 2. Clear Local Session
         st.session_state.clear()
+        
+        # 3. Clear Cookies
         cm.delete("auth_key")
         cm.delete("session_token")
+        
+        st.success("Logged out successfully!")
+        time.sleep(0.5)
         st.rerun()
 
     st.divider()
