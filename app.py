@@ -22,6 +22,9 @@ KEYS_FILE = "web_keys.json"
 PRESETS_FILE = "user_presets.json"
 ACTIVE_FILE = "active_sessions.json"  # key -> True (កំពុងប្រើ)
 
+# 🧁 Cookie Manager (GLOBAL – កុំដាក់ក្នុង session_state)
+cookie_manager = stx.CookieManager()
+
 # 🎨 CUSTOM CSS
 st.markdown("""
 <style>
@@ -103,11 +106,6 @@ def save_json(path, data):
             json.dump(data, f, indent=2, ensure_ascii=False)
     except Exception:
         pass
-
-def get_cookie_manager():
-    if "cookie_manager" not in st.session_state:
-        st.session_state.cookie_manager = stx.CookieManager()
-    return st.session_state.cookie_manager
 
 # --- ACTIVE KEYS (១ key អាចប្រើបានតែមួយក្នុងពេលតែមួយ) ---
 def load_active_sessions():
@@ -277,14 +275,13 @@ if st.query_params.get("view") == "admin":
 # 3. AUTH FLOW (Cookie Remember + ACTIVE_FILE)
 # ==========================================
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
-cm = get_cookie_manager()
 
 if "auth" not in st.session_state:
     st.session_state.auth = False
 
 # 3.1 AUTO LOGIN BY COOKIE (Remember key ក្នុង browser)
 if not st.session_state.auth:
-    ck = cm.get("auth_key")
+    ck = cookie_manager.get("auth_key")
     if ck:
         s, d = login_from_cookie(ck)
         if s == "Valid":
@@ -292,7 +289,7 @@ if not st.session_state.auth:
             st.session_state.ukey = ck
             st.session_state.days = d
         else:
-            cm.delete("auth_key")
+            cookie_manager.delete("auth_key")
 
 # 3.2 LOGIN FORM
 if not st.session_state.auth:
@@ -303,7 +300,8 @@ if not st.session_state.auth:
             st.session_state.auth = True
             st.session_state.ukey = key
             st.session_state.days = d
-            cm.set(
+            # ⭐ set cookie remember
+            cookie_manager.set(
                 "auth_key",
                 key,
                 expires_at=datetime.datetime.now() + datetime.timedelta(days=30),
@@ -344,7 +342,7 @@ with st.sidebar:
 
     if st.button("Logout"):
         logout_key(st.session_state.ukey)
-        cm.delete("auth_key")
+        cookie_manager.delete("auth_key")
         st.session_state.clear()
         st.rerun()
 
@@ -361,7 +359,7 @@ with st.sidebar:
     v_sel = st.selectbox(
         "Voice",
         list(VOICES.keys()),
-        index=list(VOICES.keys()).index(st.session_state.g_voice),
+        index,list(VOICES.keys()).index(st.session_state.g_voice),
     )
     r_sel = st.slider("Speed", -50, 50, value=st.session_state.g_rate)
     p_sel = st.slider("Pitch", -50, 50, value=st.session_state.g_pitch)
@@ -476,7 +474,6 @@ with tab2:
                 for idx in range(len(st.session_state.srt_lines)):
                     apply_preset_to_line(st.session_state.ukey, idx, slot_id)
                 st.success(f"Applied {srt_default_preset} to all lines ✅")
-                # មិនចាំបាច់ st.rerun() ទៀត, របាយការណ៍ sync ខាងក្រោមធ្វើការ
             else:
                 st.warning("Please select a valid preset before applying.")
 
@@ -576,7 +573,7 @@ with tab2:
                                 apply_preset_to_line(
                                     st.session_state.ukey, idx, slot_id
                                 )
-                                st.rerun()  # ត្រូវការនេះ ដើម្បីឲ្យ widget update បន្ទាប់ពី preset
+                                st.rerun()
 
         # GENERATE FULL AUDIO
         if st.button("🚀 Generate Full Audio (Strict Sync)", type="primary"):
