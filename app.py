@@ -273,117 +273,120 @@ if st.query_params.get("view") == "admin":
     st.stop()
 
 # ==========================================
-# 3. AUTH FLOW (FIXED: Refresh & Cookie Lag)
+# 3. AUTH FLOW (FINAL FIXED VERSION)
 # ==========================================
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
 cm = get_cookie_manager()
 
-# --- 3.0: SMART COOKIE LOADER ---
-# ពេល Refresh ដំបូង Cookie អាចនឹងមិនទាន់ Load ទាន់។ យើងត្រូវរង់ចាំបន្តិច។
+# --- 3.0: ROBUST DEVICE ID SETUP ---
+# ព្យាយាមទាញយក Cookie (រង់ចាំបន្តិចបើវា Load មិនទាន់ចប់)
 cookies = cm.get_all()
-
-# ប្រសិនបើ Cookies នៅទទេ (អាចមកពី Lag), យើងរង់ចាំបន្តិចហើយ Rerun
 if not cookies:
-    time.sleep(0.2)
+    time.sleep(0.5)
     cookies = cm.get_all()
 
 cookie_dev_id = cookies.get("device_id") if cookies else None
 cookie_auth_key = cookies.get("auth_key") if cookies else None
 
-# --- 3.1: DEVICE ID MANAGEMENT ---
+# Logic ការពារកុំឱ្យ Device ID ផ្លាស់ប្តូរពេល Refresh
 if "device_id" not in st.session_state:
     if cookie_dev_id:
-        # ករណីទី 1: មានក្នុង Cookie យកមកប្រើ
         st.session_state.device_id = cookie_dev_id
     elif cookie_auth_key and not cookie_dev_id:
-        # ករណីទី 2 (សំខាន់បំផុត): មាន Auth Key តែអត់ឃើញ Device ID (Cookie Lag)
-        # ហាមបង្កើតថ្មី! ព្រោះវាអាចធ្វើឱ្យដាច់ Key។ យើង Rerun ដើម្បីចាំ Cookie។
+        # បើមាន Key តែអត់មាន Device ID -> Rerun ដើម្បីចាំ Cookie (កុំបង្កើតថ្មី)
         time.sleep(0.5)
         st.rerun()
     else:
-        # ករណីទី 3: User ថ្មីសុទ្ធ (អត់មាន Key, អត់មាន Device ID) -> បង្កើតថ្មី
+        # User ថ្មី -> បង្កើត ID ថ្មី
         new_id = str(uuid.uuid4())
         st.session_state.device_id = new_id
-        # Save ទុក 1 ឆ្នាំ
         cm.set("device_id", new_id, 
                expires_at=datetime.datetime.now() + datetime.timedelta(days=365), 
-               key="set_device_id")
+               key="set_dev_id_init")
         time.sleep(0.1)
 
 current_device_id = st.session_state.device_id
 
-# --- 3.2: AUTHENTICATION ---
+# --- 3.1: AUTO LOGIN CHECK ---
 if "auth" not in st.session_state:
     st.session_state.auth = False
 
-# A. AUTO LOGIN (Via Cookie)
 if not st.session_state.auth and cookie_auth_key:
-    # ពិនិត្យមើលថាតើ Key នេះគូជាមួយ Device ID នេះដែរឬទេ?
+    # Check ជាមួយ Device ID បច្ចុប្បន្ន
     status, days = login_logic(cookie_auth_key, current_device_id)
     if status == "Valid":
         st.session_state.auth = True
         st.session_state.ukey = cookie_auth_key
         st.session_state.days = days
-        st.toast(f"Welcome back! ({days} days left)")
+        st.toast(f"Welcome back! ({days} days)")
     else:
-        # បើ Login មិនកើត (Device ID ខុសគ្នា ឬ Key ផុតកំណត់)
-        pass 
+        # បើ Auto Login មិនកើត -> ចាំចូល Form ខាងក្រោម
+        pass
 
-# ==========================================
-# 3.2 LOGIN FORM (Corrected Force Login Logic)
-# ==========================================
+# --- 3.2: LOGIN FORM & FORCE LOGIN ---
 if not st.session_state.auth:
     key_input = st.text_input("🔑 Access Key", type="password", key="login_input")
     remember = st.checkbox("Remember me", value=True)
-    
-    # ចុច Login
+
+    # 1. ប៊ូតុង LOGIN ធម្មតា
     if st.button("Login", type="primary"):
         status, days = login_logic(key_input, current_device_id)
         
         if status == "Valid":
-            # Login ជោគជ័យ
+            # SUCCESS
             st.session_state.auth = True
             st.session_state.ukey = key_input
             st.session_state.days = days
-            
-            # Clear Error ចាស់ចោល (បើមាន)
-            st.session_state.login_error = None
+            st.session_state.login_error = None # Clear errors
             
             if remember:
                 cm.set("auth_key", key_input, 
                        expires_at=datetime.datetime.now() + datetime.timedelta(days=30), 
-                       key="set_auth_key")
+                       key="set_auth_normal")
             
             st.success("Login success!")
-            time.sleep(0.5)
             st.rerun()
+        
         else:
-            # Login បរាជ័យ
+            # FAIL
             if "active on another browser" in status:
-                # ដាក់ចូល session state ដើម្បីឱ្យវាចាំថាមាន Error នេះ
                 st.session_state.login_error = "duplicate"
-                st.session_state.error_key = key_input # ចាំ Key ទុកសម្រាប់ Force Login
+                st.session_state.error_key = key_input
             else:
                 st.error(status)
 
-    # --- ផ្នែក Force Login (នៅក្រៅប៊ូតុង Login) ---
+    # 2. ផ្នែក FORCE LOGIN (នៅក្រៅប៊ូតុង Login)
     if st.session_state.get("login_error") == "duplicate":
-        st.error("🔒 Key នេះកំពុងជាប់នៅ Browser ផ្សេង។ តើអ្នកចង់ទាត់ Device ចាស់ចេញទេ?")
-        
-        if st.button("Force Login (Clear Old Session)?"):
-             # Logic ទាត់ Device ចាស់ចេញ
-             target_key = st.session_state.get("error_key", key_input)
-             active = load_active_sessions()
-             active[target_key] = current_device_id # ដាក់ ID បច្ចុប្បន្នចូល
-             save_active_sessions(active)
-             
-             # Clear Error
-             st.session_state.login_error = None
-             
-             st.success("Session has been reset! Please click Login again.")
-             time.sleep(1)
-             st.rerun()
+        st.error("🔒 Key នេះកំពុងប្រើនៅ Browser ផ្សេង។")
+        st.info("តើអ្នកចង់ Log out ពីកន្លែងចាស់ ហើយចូលទីនេះភ្លាមៗទេ?")
+
+        if st.button("Force Login (ចូលទីនេះភ្លាម)", type="secondary"):
+            target_key = st.session_state.get("error_key", key_input)
             
+            # A. Update Active Session ទៅកាន់ Device នេះ
+            active = load_active_sessions()
+            active[target_key] = current_device_id
+            save_active_sessions(active)
+            
+            # B. Auto Login ភ្លាមៗ (មិនបាច់ចុច Login ម្តងទៀត)
+            st.session_state.auth = True
+            st.session_state.ukey = target_key
+            
+            # យកចំនួនថ្ងៃដែលនៅសល់
+            _, days_left = check_access_key(target_key)
+            st.session_state.days = days_left
+            
+            # C. Save Cookie ថ្មី
+            cm.set("auth_key", target_key, 
+                   expires_at=datetime.datetime.now() + datetime.timedelta(days=30), 
+                   key="set_auth_force")
+            
+            # D. Clear Error & Rerun
+            st.session_state.login_error = None
+            st.success("Session Reset Success! Redirecting...")
+            time.sleep(1)
+            st.rerun()
+
     st.stop()
 
 # ==========================================
@@ -537,6 +540,7 @@ with tab2:
 with tab3:
     st.subheader("Gemini Translator")
     st.info("Coming Soon...")
+
 
 
 
