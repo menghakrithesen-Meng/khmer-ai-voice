@@ -186,79 +186,76 @@ if st.query_params.get("view") == "admin":
 
 
 # ==========================================
-# 3. AUTH FLOW (STRICT MODE: LOGOUT REQUIRED)
+# 3. AUTH FLOW (FIXED: SHOW LOGIN FORM ALWAYS)
 # ==========================================
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
 cm = stx.CookieManager(key="main_manager")
 
-# --- 3.1 COOKIE RETRY (Fix Refresh Issue) ---
-if "retry_count" not in st.session_state:
-    st.session_state.retry_count = 0
-
+# --- 3.1 COOKIE LOADER ---
+# ព្យាយាមអាន Cookie
 cookie_key = cm.get("auth_key")
 cookie_token = cm.get("session_token")
 
-# Wait for cookie (Retry Mechanism)
-if not cookie_key and st.session_state.retry_count < 1:
-    time.sleep(0.5)
-    st.session_state.retry_count += 1
-    st.rerun()
-
-if cookie_key:
-    st.session_state.retry_count = 0
-
-# --- 3.2 AUTO LOGIN LOGIC ---
+# --- 3.2 AUTO LOGIN CHECK ---
 if "auth" not in st.session_state:
     st.session_state.auth = False
 
-# Auto Login: Only if Token matches Server
+# ប្រសិនបើមិនទាន់ Login ក្នុង App តែមាន Cookie -> សាកល្បង Auto Login
 if not st.session_state.auth and cookie_key and cookie_token:
+    # 1. Check Key សុពលភាព
     status, days = check_access_key(cookie_key)
+    # 2. Check Token (1 Key 1 Browser)
     server_token = get_server_token(cookie_key)
     
     if status == "Valid" and cookie_token == server_token:
+        # ✅ ត្រឹមត្រូវ -> ឱ្យចូល
         st.session_state.auth = True
         st.session_state.ukey = cookie_key
         st.session_state.days = days
         st.session_state.my_token = cookie_token
+        time.sleep(0.1)
+        st.rerun() # Refresh ដើម្បីចូលកម្មវិធី
     else:
-        pass # Token mismatch or Key removed from server
+        # ❌ Cookie មិនត្រឹមត្រូវ ឬមានគេចូលកន្លែងផ្សេង -> ទុកឱ្យធ្លាក់ទៅ Login Form
+        pass
 
-# --- 3.3 LOGIN FORM (STRICT) ---
+# --- 3.3 LOGIN FORM (SHOWS IF NOT AUTH) ---
 if not st.session_state.auth:
-    if st.session_state.retry_count > 0:
-        st.spinner("Checking session...")
-        st.stop()
-
-    st.markdown("##### 🔐 Login Required")
+    
+    # ដាក់ Logo និងចំណងជើង Login
+    st.markdown("### 🔐 Login Required")
+    
     with st.form("login_form"):
         key_input = st.text_input("🔑 Access Key", type="password")
         remember = st.checkbox("Remember me", value=True)
         submitted = st.form_submit_button("Login", type="primary")
 
     if submitted:
-        # 1. Check Key Validity
+        # 1. Check Key
         status, days = check_access_key(key_input)
         if status != "Valid":
             st.error(status)
             st.stop()
 
-        # 2. STRICT CHECK: Is Key already in use?
+        # 2. Check & Force Login (Strict Mode)
+        # ពិនិត្យមើលថា Key នេះមានគេកំពុងប្រើឬអត់?
         if is_key_already_in_use(key_input):
+            # ករណីចង់ឱ្យ Strict (ត្រូវ Logout ពីកន្លែងចាស់សិន)
             st.error("⛔ Access Denied!")
-            st.warning("Key នេះកំពុង Online នៅ Browser/Device ផ្សេង។")
-            st.info("សូមទៅចុច Logout ពី Device ចាស់ជាមុនសិន ទើបអាចចូលទីនេះបាន។")
+            st.warning("Key នេះកំពុង Online នៅ Browser ផ្សេង។ សូម Logout ពីកន្លែងចាស់សិន។")
             st.stop()
-
-        # 3. If not in use, Create Session
+            
+            # ចំណាំ: បើចង់ឱ្យចូលបានភ្លាមៗ (ទាត់កន្លែងចាស់ចោល) សូមលុបកូដ if is_key_already_in_use... ខាងលើចោល
+        
+        # 3. Create Session (Login)
         new_token = create_session(key_input)
         
         st.session_state.auth = True
         st.session_state.ukey = key_input
         st.session_state.days = days
         st.session_state.my_token = new_token
-        st.session_state.retry_count = 0
         
+        # Save Cookies
         if remember:
             exp = datetime.datetime.now() + datetime.timedelta(days=30)
             cm.set("auth_key", key_input, expires_at=exp, key="sk")
@@ -267,7 +264,12 @@ if not st.session_state.auth:
         st.success("Login Success!")
         time.sleep(0.5)
         st.rerun()
-    
+
+    # Warning message (ខាងក្រោម Form)
+    if cookie_key and cookie_token:
+        st.caption("⚠️ Session Expired or Invalid Cookie.")
+
+    # សំខាន់៖ Stop នៅទីនេះ ដើម្បីកុំឱ្យបង្ហាញ App Content ខាងក្រោម
     st.stop()
 
 
@@ -449,3 +451,4 @@ with tab2:
 with tab3:
     st.subheader("Gemini Translator (SRT)")
     st.info("Coming Soon...")
+
