@@ -357,9 +357,9 @@ with st.sidebar:
         st.session_state.g_pitch = 0
 
     v_sel = st.selectbox(
-        "Voice",
-        list(VOICES.keys()),
-        index,list(VOICES.keys()).index(st.session_state.g_voice),
+    "Voice",
+    list(VOICES.keys()),
+    index=list(VOICES.keys()).index(st.session_state.g_voice),
     )
     r_sel = st.slider("Speed", -50, 50, value=st.session_state.g_rate)
     p_sel = st.slider("Pitch", -50, 50, value=st.session_state.g_pitch)
@@ -626,3 +626,4 @@ with tab2:
 with tab3:
     st.subheader("Gemini Translator (SRT)")
     st.info("Coming Soon...")
+
