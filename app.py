@@ -20,7 +20,7 @@ st.set_page_config(page_title="Khmer AI Voice Pro", page_icon="🎙️", layout=
 
 KEYS_FILE = "web_keys.json"
 PRESETS_FILE = "user_presets.json"
-ACTIVE_FILE = "active_sessions.json"  # 🔐 key -> True (កំពុងប្រើ)
+ACTIVE_FILE = "active_sessions.json"  # key -> True (កំពុងប្រើ)
 
 # 🎨 CUSTOM CSS
 st.markdown("""
@@ -292,7 +292,6 @@ if not st.session_state.auth:
             st.session_state.ukey = ck
             st.session_state.days = d
         else:
-            # key ខូច/ផុតកំណត់ → លុប cookie
             cm.delete("auth_key")
 
 # 3.2 LOGIN FORM
@@ -304,7 +303,6 @@ if not st.session_state.auth:
             st.session_state.auth = True
             st.session_state.ukey = key
             st.session_state.days = d
-            # remember key លើ browser នេះ
             cm.set(
                 "auth_key",
                 key,
@@ -344,18 +342,11 @@ VOICES = {
 with st.sidebar:
     st.success(f"✅ Active: {st.session_state.days} Days")
 
-    col_logout, col_close = st.columns(2)
-    with col_logout:
-        if st.button("Logout"):
-            # clear active key + cookie
-            logout_key(st.session_state.ukey)
-            cm.delete("auth_key")
-            st.session_state.clear()
-            st.rerun()
-    with col_close:
-        if st.button("🛑 Close Console"):
-            # បិទ streamlit process (Termux console បិទ app)
-            os._exit(0)
+    if st.button("Logout"):
+        logout_key(st.session_state.ukey)
+        cm.delete("auth_key")
+        st.session_state.clear()
+        st.rerun()
 
     st.divider()
     st.subheader("⚙️ Global Settings")
@@ -485,7 +476,7 @@ with tab2:
                 for idx in range(len(st.session_state.srt_lines)):
                     apply_preset_to_line(st.session_state.ukey, idx, slot_id)
                 st.success(f"Applied {srt_default_preset} to all lines ✅")
-                st.rerun()
+                # មិនចាំបាច់ st.rerun() ទៀត, របាយការណ៍ sync ខាងក្រោមធ្វើការ
             else:
                 st.warning("Please select a valid preset before applying.")
 
@@ -585,7 +576,7 @@ with tab2:
                                 apply_preset_to_line(
                                     st.session_state.ukey, idx, slot_id
                                 )
-                                st.rerun()
+                                st.rerun()  # ត្រូវការនេះ ដើម្បីឲ្យ widget update បន្ទាប់ពី preset
 
         # GENERATE FULL AUDIO
         if st.button("🚀 Generate Full Audio (Strict Sync)", type="primary"):
