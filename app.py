@@ -273,111 +273,117 @@ if st.query_params.get("view") == "admin":
     st.stop()
 
 # ==========================================
-# 3. AUTH FLOW (FINAL FIXED - SESSION TOKEN SYSTEM)
+# 3. AUTH FLOW (ULTIMATE FIX - RETRY MECHANISM)
 # ==========================================
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
-cm = get_cookie_manager()
 
-# --- HELPER FUNCTIONS FOR SESSION ---
+# ប្រើ key តែមួយគត់សម្រាប់ Cookie Manager កុំប្តូរ key
+cm = stx.CookieManager(key="main_cookie_manager")
+
+# --- HELPER FUNCTIONS ---
 def get_active_token(user_key):
-    """ទាញយក Token ដែលកំពុង Active ពី Server (JSON)"""
     active = load_active_sessions()
     return active.get(user_key)
 
 def set_active_session(user_key):
-    """បង្កើត Token ថ្មី ហើយ Save ចូល Server (Login ថ្មី)"""
-    new_token = str(uuid.uuid4()) # បង្កើតលេខសម្គាល់ថ្មី
+    new_token = str(uuid.uuid4())
     active = load_active_sessions()
     active[user_key] = new_token
     save_active_sessions(active)
     return new_token
 
-def clear_session_cookie():
-    """លុប Cookie ចោលពេល Logout ឬ Session ខុស"""
-    cm.delete("auth_key")
-    cm.delete("session_token")
+# --- 3.0: SMART COOKIE LOADER (កែថ្មីត្រង់នេះ) ---
+# យើងបង្កើត Retry Mechanism ដើម្បីកុំឱ្យដាច់ Key ពេល Refresh
 
-# --- 3.0: LOAD COOKIES SAFELY ---
-# ចំណុចសំខាន់៖ យើងមិនបង្កើត ID អូតូទៀតទេ។ យើងរង់ចាំអានពី Cookie តែមួយមុខគត់។
-cookies = cm.get_all()
-# Trick: រង់ចាំបន្តិចដើម្បីឱ្យ Cookie Load ទាន់ពេល Refresh
-if not cookies:
-    time.sleep(0.2)
-    cookies = cm.get_all()
+if "retry_count" not in st.session_state:
+    st.session_state.retry_count = 0
 
-cookie_key = cookies.get("auth_key")
-cookie_token = cookies.get("session_token")
+cookie_key = cm.get("auth_key")
+cookie_token = cm.get("session_token")
 
-# --- 3.1: AUTO-LOGIN CHECK (ពេល Refresh) ---
+# ប្រសិនបើរក Cookie មិនឃើញ យើងកុំអាលសន្និដ្ឋានថាដាច់
+# យើងសាកល្បង Rerun 2 ដងសិន ដើម្បីទុកពេលឱ្យ Browser ផ្ញើ Cookie មក
+if not cookie_key and st.session_state.retry_count < 2:
+    time.sleep(0.5) # ចាំ 0.5 វិនាទី
+    st.session_state.retry_count += 1
+    st.rerun() # Rerun ម្ដងទៀត
+
+# បើមាន Cookie ហើយ ឬ Rerun គ្រប់ 2 ដងហើយ -> Reset Retry
+if cookie_key:
+    st.session_state.retry_count = 0
+
+
+# --- 3.1: AUTO-LOGIN LOGIC ---
 if "auth" not in st.session_state:
     st.session_state.auth = False
 
-# ពិនិត្យមើលថាតើ User ធ្លាប់ Login ហើយឬនៅ?
+# Logic: បើមាន Cookie ត្រឹមត្រូវ -> ឱ្យចូលដោយស្វ័យប្រវត្តិ
 if not st.session_state.auth and cookie_key and cookie_token:
-    # 1. ពិនិត្យសុពលភាព Key (ផុតកំណត់ឬនៅ?)
+    # 1. Check Key
     status, days = check_access_key(cookie_key)
-    
-    # 2. ពិនិត្យសុវត្ថិភាព (តើ Token ក្នុង Browser ដូចគ្នាជាមួយ Server ទេ?)
+    # 2. Check Session Token (1 Key 1 Browser)
     server_token = get_active_token(cookie_key)
     
     if status == "Valid" and cookie_token == server_token:
-        # ✅ ត្រឹមត្រូវគ្រប់យ៉ាង -> ឱ្យចូល
         st.session_state.auth = True
         st.session_state.ukey = cookie_key
         st.session_state.days = days
-        # st.toast(f"Session Restored! ({days} days left)") # Optional
+        # បិទ Toast កុំឱ្យរំខាន
+        # st.toast(f"Restore Session Success!") 
     else:
-        # ❌ ខុសគ្នា (មានគេ Login ថ្មីនៅកន្លែងផ្សេង) ឬ Key ផុតកំណត់
-        # មិនបាច់ធ្វើអីទេ ទុកឱ្យធ្លាក់ចូល Form Login ខាងក្រោម
+        # Cookie ខុស ឬ Session ជាន់គ្នា
         pass
+
 
 # --- 3.2: LOGIN INTERFACE ---
 if not st.session_state.auth:
+    # បើកំពុង Retry កុំទាន់បង្ហាញផ្ទាំង Login (ដាក់ Spinner ជំនួស)
+    if st.session_state.retry_count > 0 and st.session_state.retry_count < 2:
+        with st.spinner("🔄 Checking session..."):
+            time.sleep(1)
+            st.stop()
+
     st.markdown("##### 🔐 Login Required")
     
     with st.form("login_form"):
         key_input = st.text_input("🔑 Access Key", type="password")
         remember = st.checkbox("Remember me", value=True)
-        btn_login = st.form_submit_button("Login", type="primary")
+        submitted = st.form_submit_button("Login", type="primary")
 
-    if btn_login:
-        # 1. Check Key ត្រឹមត្រូវទេ?
+    if submitted:
+        # 1. Validate Key
         status, days = check_access_key(key_input)
         
         if status != "Valid":
             st.error(status)
             st.stop()
 
-        # 2. Check ថាតើ Key នេះកំពុងប្រើនៅកន្លែងផ្សេងទេ?
-        active_token = get_active_token(key_input)
-        
-        # បើ Active Token មានរួចហើយ -> មានន័យថាមានគេកំពុងប្រើ
-        # ប៉ុន្តែយើងនឹងអនុញ្ញាតឱ្យម្ចាស់ Key ថ្មី "ដណ្តើម" (Force Login) យកមកប្រើ
-        # ដោយគ្រាន់តែបង្កើត Token ថ្មី នោះកន្លែងចាស់នឹងដាច់ដោយស្វ័យប្រវត្តិ។
-        
-        # បង្កើត Session ថ្មី (This automatically kicks out the other browser)
+        # 2. Create New Session
+        # មិនខ្វល់ថាមានអ្នកប្រើ ឬអត់ យើងបង្កើតថ្មីជាន់ពីលើតែម្តង (Force Login Auto)
         new_token = set_active_session(key_input)
         
-        # Save ចូល Session State
+        # Save to Session State
         st.session_state.auth = True
         st.session_state.ukey = key_input
         st.session_state.days = days
+        st.session_state.retry_count = 0
         
-        # Save ចូល Cookie
+        # Save to Cookie
         if remember:
-            exp_date = datetime.datetime.now() + datetime.timedelta(days=30)
-            cm.set("auth_key", key_input, expires_at=exp_date, key="set_k")
-            cm.set("session_token", new_token, expires_at=exp_date, key="set_t")
+            exp = datetime.datetime.now() + datetime.timedelta(days=30)
+            # ប្រើ key ខុសគ្នាដើម្បីកុំឱ្យ Error Duplicate Element
+            cm.set("auth_key", key_input, expires_at=exp, key="set_k_final")
+            cm.set("session_token", new_token, expires_at=exp, key="set_t_final")
         
-        st.success(f"Login Success! Other sessions for this key are now INVALID.")
-        time.sleep(1)
+        st.success(f"Login Success! ({days} days left)")
+        time.sleep(0.5)
         st.rerun()
     
-    # បង្ហាញសារព្រមាន បើគេព្យាយាមចូលដោយប្រើ Cookie ចាស់ដែលដាច់
+    # Warning message
     if cookie_key and cookie_token:
         server_token = get_active_token(cookie_key)
         if server_token and server_token != cookie_token:
-             st.warning("⚠️ Session Expired: Key នេះត្រូវបាន Login នៅលើ Browser ផ្សេង។ សូម Login ម្តងទៀតដើម្បីយកសិទ្ធិមកវិញ។")
+             st.warning("⚠️ Session Expired: Key នេះត្រូវបាន Login នៅកន្លែងផ្សេង។")
 
     st.stop()
 
@@ -533,6 +539,7 @@ with tab2:
 with tab3:
     st.subheader("Gemini Translator")
     st.info("Coming Soon...")
+
 
 
 
