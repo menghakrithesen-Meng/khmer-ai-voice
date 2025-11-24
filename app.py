@@ -273,19 +273,38 @@ if st.query_params.get("view") == "admin":
     st.stop()
 
 # ==========================================
-# 3. AUTH FLOW (Strict 1 Key 1 Browser)
+# 3. AUTH FLOW (Strict 1 Key 1 Browser + Persistent Device ID)
 # ==========================================
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
 cm = get_cookie_manager()
+
+# --- 3.0: PERSISTENT DEVICE ID SETUP (កែថ្មីត្រង់នេះ) ---
+# យើងត្រូវចាំ Device ID ក្នុង Cookie ដើម្បីកុំឱ្យបាត់ពេល Refresh
+cookie_dev_id = cm.get("device_id")
+
+if cookie_dev_id:
+    # បើមានក្នុង Cookie យកមកប្រើ
+    st.session_state.device_id = cookie_dev_id
+else:
+    # បើអត់ទាន់មាន (បើកដំបូង) -> បង្កើតថ្មី ហើយ Save ចូល Cookie
+    if "device_id" not in st.session_state:
+        st.session_state.device_id = str(uuid.uuid4())
+    
+    # Save ទុក 1 ឆ្នាំ
+    cm.set("device_id", st.session_state.device_id, expires_at=datetime.datetime.now() + datetime.timedelta(days=365))
+    # ចាំបាច់ត្រូវ Stop ដើម្បីឱ្យ Cookie សរសេរចូល Browser សិន
+    time.sleep(0.1) 
+
 current_device_id = st.session_state.device_id
+
+# --- 3.1 & 3.2: AUTHENTICATION ---
 
 if "auth" not in st.session_state:
     st.session_state.auth = False
 
-# 3.1 AUTO LOGIN BY COOKIE
-# (ពិនិត្យមើល Cookie + ផ្ទៀងផ្ទាត់ថាតើ Device ID នេះជាម្ចាស់ Key ដែរឬទេ)
+# Auto Login
 if not st.session_state.auth:
-    time.sleep(0.1) # Wait for cookie manager
+    time.sleep(0.1) # Wait for cookie reader
     ck_key = cm.get("auth_key")
     if ck_key:
         status, days = login_logic(ck_key, current_device_id)
@@ -294,11 +313,10 @@ if not st.session_state.auth:
             st.session_state.ukey = ck_key
             st.session_state.days = days
         else:
-            # បើ Cookie មានតែកូដមិនត្រឹមត្រូវ (ឬ Login នៅកន្លែងផ្សេងហើយ) -> Clear Cookie
-            # cm.delete("auth_key") # Optional: Delete cookie if invalid
-            st.warning(f"Session Expired or Invalid: {status}")
+            # កុំបង្ហាញ Error ធំពេកគ្រាន់តែ Warning
+            pass 
 
-# 3.2 LOGIN FORM
+# Login Form
 if not st.session_state.auth:
     key_input = st.text_input("🔑 Access Key", type="password", key="login_input")
     remember = st.checkbox("Remember me", value=True)
@@ -312,6 +330,7 @@ if not st.session_state.auth:
             st.session_state.days = days
             
             if remember:
+                # Save Key
                 cm.set("auth_key", key_input, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
             
             st.success("Login success!")
@@ -319,7 +338,13 @@ if not st.session_state.auth:
             st.rerun()
         else:
             if "active on another browser" in status:
-                st.error("🔒 Key នេះកំពុងប្រើនៅលើ Browser ឬ Device ផ្សេង។ សូម Logout ពីកន្លែងចាស់ជាមុនសិន។")
+                st.error(f"🔒 Key នេះកំពុងជាប់នៅ Browser ផ្សេង (ID ខុសគ្នា)។")
+                # ប៊ូតុងដើម្បី Reset Session (Optional - សម្រាប់ម្ចាស់ Key បើចង់ Force Login)
+                if st.button("Force Login (Clear Old Session)?"):
+                     active = load_active_sessions()
+                     active[key_input] = current_device_id # ដាក់ ID ថ្មីចូលជំនួស
+                     save_active_sessions(active)
+                     st.success("Session reset! Please click Login again.")
             else:
                 st.error(status)
     
@@ -476,3 +501,4 @@ with tab2:
 with tab3:
     st.subheader("Gemini Translator")
     st.info("Coming Soon...")
+
