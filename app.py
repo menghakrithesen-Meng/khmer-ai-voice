@@ -31,15 +31,12 @@ ACTIVE_FILE = "active_sessions.json"
 
 st.markdown("""
 <style>
-    /* Global App Style */
     .stApp { background: linear-gradient(to right, #0f172a, #1e293b); color: white; }
     section[data-testid="stSidebar"] { background-color: #111827; border-right: 1px solid #374151; }
     
-    /* Input Cleanups */
     button[data-testid="stNumberInputStepDown"], button[data-testid="stNumberInputStepUp"] { display: none; }
     div[data-testid="stNumberInput"] input { text-align: center; }
     
-    /* Sidebar Buttons */
     [data-testid="stSidebar"] div[data-testid="column"] button { 
         padding: 0px 2px !important; 
         font-size: 11px !important; 
@@ -50,7 +47,6 @@ st.markdown("""
         text-overflow: ellipsis; 
     }
 
-    /* Line Editor Buttons (Compact) */
     .stTabs div[data-testid="column"] button {
         padding: 0px !important;
         font-size: 12px !important;
@@ -60,14 +56,12 @@ st.markdown("""
         border-radius: 4px;
     }
 
-    /* Active Button Color */
     div[data-testid="column"] button[kind="primary"] { 
         border: 1px solid #ef4444 !important; 
         background-color: #ef4444 !important; 
         color: white !important; 
     }
     
-    /* FORCE TEXT AREA VISIBILITY (Dark Mode) */
     .stTextArea textarea {
         background-color: #0f172a !important;
         color: #ffffff !important;
@@ -76,7 +70,6 @@ st.markdown("""
         border-radius: 6px !important;
     }
 
-    /* SRT Container Card */
     .srt-container {
         background-color: #1e293b;
         padding: 8px;
@@ -106,7 +99,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. HELPER FUNCTIONS
+# 1. HELPER FUNCTIONS (WITH ACTIVE SESSIONS)
 # ==========================================
 def load_json(path):
     if not os.path.exists(path):
@@ -125,24 +118,30 @@ def save_json(path, data):
         pass
 
 def load_active_sessions():
-    return load_json(ACTIVE_FILE)
+    data = load_json(ACTIVE_FILE)
+    if isinstance(data, dict):
+        return data
+    return {}
+
+def save_active_sessions(data):
+    save_json(ACTIVE_FILE, data)
 
 def get_server_token(user_key):
     return load_active_sessions().get(user_key)
 
-def create_session(user_key):
+def set_session(user_key):
     """Create/overwrite session token for this key (1 key = 1 active browser)."""
-    new_token = str(uuid.uuid4())
+    token = str(uuid.uuid4())
     active = load_active_sessions()
-    active[user_key] = new_token
-    save_json(ACTIVE_FILE, active)
-    return new_token
+    active[user_key] = token
+    save_active_sessions(active)
+    return token
 
 def delete_session(user_key):
     active = load_active_sessions()
     if user_key in active:
         del active[user_key]
-        save_json(ACTIVE_FILE, active)
+        save_active_sessions(active)
 
 def check_access_key(user_key):
     keys_db = load_json(KEYS_FILE)
@@ -173,7 +172,7 @@ def get_user_preset(user_key, slot):
     db = load_json(PRESETS_FILE)
     return db.get(user_key, {}).get(str(slot), None)
 
-# 🔥 Callback function to update state BEFORE render (for SRT presets)
+# Preset apply (SRT)
 def apply_preset_to_line_callback(user_key, line_index, slot_id):
     pd = get_user_preset(user_key, slot_id)
     if not pd:
@@ -188,7 +187,6 @@ def apply_preset_to_line_callback(user_key, line_index, slot_id):
     st.session_state[f"r{line_index}"] = pd["rate"]
     st.session_state[f"p{line_index}"] = pd["pitch"]
 
-# non-callback version for bulk apply
 def apply_preset_to_line_bulk(user_key, line_index, slot_id):
     pd = get_user_preset(user_key, slot_id)
     if not pd:
@@ -252,7 +250,7 @@ def parse_srt(content):
     return subs
 
 # ==========================================
-# 2. AUTH & ADMIN
+# 2. ADMIN PANEL (generate keys + view sessions)
 # ==========================================
 if st.query_params.get("view") == "admin":
     st.title("🔐 Admin Panel")
@@ -268,17 +266,22 @@ if st.query_params.get("view") == "admin":
                 save_json(KEYS_FILE, db)
                 st.success(f"New Key: {k}")
         with c2:
-            k_kick = st.text_input("Kick Key")
-            if st.button("Kick"):
-                delete_session(k_kick)
-                st.success("Kicked")
-            if st.button("Reset ALL"):
-                save_json(ACTIVE_FILE, {})
-                st.success("Reset Done")
-        st.write("Active Sessions")
+            kick_key = st.text_input("Kick key")
+            if st.button("Kick This Key"):
+                delete_session(kick_key)
+                st.success("Key session cleared.")
+            if st.button("Reset ALL Sessions"):
+                save_active_sessions({})
+                st.success("All sessions cleared.")
+        st.subheader("All Keys")
+        st.json(load_json(KEYS_FILE))
+        st.subheader("Active Sessions")
         st.json(load_active_sessions())
     st.stop()
 
+# ==========================================
+# 3. AUTH (1 key = 1 browser)
+# ==========================================
 c1, c2, c3 = st.columns([1, 2, 1])
 with c2:
     try:
@@ -290,17 +293,16 @@ st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
 
 cm = stx.CookieManager(key="mgr")
 
-# auth flag
 if "auth" not in st.session_state:
     st.session_state.auth = False
-
-# retry counter for cookie loading
+if "my_token" not in st.session_state:
+    st.session_state.my_token = None
 if "cookie_retry" not in st.session_state:
     st.session_state.cookie_retry = 0
 
-# 🎯 LOAD ALL COOKIES
 raw_cookies = cm.get_all()
 
+# wait for cookies to load (avoid Remember fail on fast refresh)
 if raw_cookies is None and st.session_state.cookie_retry < 5:
     st.session_state.cookie_retry += 1
     time.sleep(0.3)
@@ -310,22 +312,24 @@ if raw_cookies is None:
     raw_cookies = {}
 
 cookie_key = raw_cookies.get("auth_key")
+cookie_token = raw_cookies.get("session_token")
 saved_key_cookie = raw_cookies.get("saved_key")
 
-# --- AUTO LOGIN BY auth_key COOKIE ---
-if (not st.session_state.auth) and cookie_key:
+# --- AUTO LOGIN BY auth_key + session_token COOKIE ---
+if (not st.session_state.auth) and cookie_key and cookie_token:
     status, days = check_access_key(cookie_key)
-    if status == "Valid":
-        # ប្រាកដថាមាន token នៅ server
-        token = get_server_token(cookie_key)
-        if not token:
-            token = create_session(cookie_key)
+    server_token = get_server_token(cookie_key)
+    if status == "Valid" and server_token == cookie_token:
         st.session_state.auth = True
         st.session_state.ukey = cookie_key
         st.session_state.days = days
-        st.session_state.my_token = token
-        time.sleep(0.1)
+        st.session_state.my_token = cookie_token
+        time.sleep(0.05)
         st.rerun()
+    else:
+        # invalid / expired / replaced elsewhere → clear auth cookies
+        cm.delete("auth_key")
+        cm.delete("session_token")
 
 # --- LOGIN FORM ---
 if not st.session_state.auth:
@@ -345,26 +349,23 @@ if not st.session_state.auth:
             st.error(status)
             st.stop()
 
-        # Login ថ្មី = សរសេរ token ថ្មី (kick session ចាស់ៗ)
-        new_token = create_session(key_input)
+        # New login = overwrite token (kick other browser)
+        new_token = set_session(key_input)
 
         st.session_state.auth = True
         st.session_state.ukey = key_input
         st.session_state.days = days
         st.session_state.my_token = new_token
 
-        # session cookie auth_key
         if remember:
             exp = datetime.datetime.now() + datetime.timedelta(days=30)
             cm.set("auth_key", key_input, expires_at=exp, key="sk")
-        else:
-            cm.delete("auth_key")
-
-        # saved_key cookie (auto-fill only, 365 days)
-        if remember:
+            cm.set("session_token", new_token, expires_at=exp, key="st")
             exp_long = datetime.datetime.now() + datetime.timedelta(days=365)
             cm.set("saved_key", key_input, expires_at=exp_long, key="rk")
         else:
+            cm.delete("auth_key")
+            cm.delete("session_token")
             cm.delete("saved_key")
 
         st.success("Success!")
@@ -375,16 +376,16 @@ if not st.session_state.auth:
 if st.session_state.auth:
     server_token = get_server_token(st.session_state.ukey)
     if (not server_token) or (server_token != st.session_state.my_token):
-        st.error("🚨 Session Expired (Logged in elsewhere).")
-        # clear this browser session
+        st.error("🚨 Session Expired (This key is active in another browser).")
         st.session_state.clear()
         cm.delete("auth_key")
-        # saved_key នៅតែទុក → auto-fill key
+        cm.delete("session_token")
+        # keep saved_key for auto-fill
         time.sleep(1)
         st.rerun()
 
 # ==========================================
-# 3. MAIN APP
+# 4. MAIN APP
 # ==========================================
 VOICES = {
     "Sreymom (Khmer)": "km-KH-SreymomNeural",
@@ -398,13 +399,14 @@ VOICES = {
 
 with st.sidebar:
     st.success(f"✅ Active: {st.session_state.days} Days")
+    st.caption(f"KEY: {st.session_state.ukey[:8]}…")
+
     if st.button("Logout", type="primary"):
-        # លុប session នៅ server
         delete_session(st.session_state.ukey)
-        # clear session state
         st.session_state.clear()
-        # លុប auth_key (តែ saved_key នៅតែមាន)
         cm.delete("auth_key")
+        cm.delete("session_token")
+        # saved_key មិនលុប → auto-fill key នៅ form
         st.rerun()
 
     st.divider()
@@ -415,10 +417,15 @@ with st.sidebar:
         st.session_state.g_rate = 0
     if "g_pitch" not in st.session_state:
         st.session_state.g_pitch = 0
-    v_sel = st.selectbox("Voice", list(VOICES.keys()), index=list(VOICES.keys()).index(st.session_state.g_voice))
+
+    v_sel = st.selectbox(
+        "Voice", list(VOICES.keys()),
+        index=list(VOICES.keys()).index(st.session_state.g_voice)
+    )
     r_sel = st.slider("Speed", -50, 50, value=st.session_state.g_rate)
     p_sel = st.slider("Pitch", -50, 50, value=st.session_state.g_pitch)
     pad_sel = st.number_input("Padding (ms)", value=80)
+
     st.session_state.g_voice = v_sel
     st.session_state.g_rate = r_sel
     st.session_state.g_pitch = p_sel
@@ -438,15 +445,16 @@ with st.sidebar:
                     st.session_state.g_pitch = saved_p["pitch"]
                     st.rerun()
         with c2:
-            if st.button(f"💾", key=f"s{i}", use_container_width=True): 
+            if st.button("💾", key=f"s{i}", use_container_width=True):
                 data = {"voice": v_sel, "rate": r_sel, "pitch": p_sel}
                 save_user_preset(st.session_state.ukey, i, data, preset_name_input)
                 st.toast(f"Saved Slot {i}!")
-                time.sleep(0.5)
+                time.sleep(0.3)
                 st.rerun()
 
 tab1, tab2 = st.tabs(["📝 Text Mode", "🎬 SRT Multi-Speaker"])
 
+# --- TAB 1: TEXT ---
 with tab1:
     txt = st.text_area("Input Text...", height=150)
     if st.button("Generate Audio 🎵", type="primary"):
@@ -464,6 +472,7 @@ with tab1:
                 except Exception as e:
                     st.error(str(e))
 
+# --- TAB 2: SRT MULTI-SPEAKER ---
 with tab2:
     srt_file = st.file_uploader("Upload SRT", type="srt", key="srt_up")
     if srt_file:
@@ -508,7 +517,7 @@ with tab2:
             s = cur["slot"]
             
             st.markdown(
-                f"""<div class='srt-container' style='border-left: 5px solid {
+                f"""<div class='srt-container' style='border-left: 5px solid {{
                     "#f97316" if s==1 else
                     "#22c55e" if s==2 else
                     "#3b82f6" if s==3 else
@@ -516,7 +525,7 @@ with tab2:
                     "#a855f7" if s==5 else
                     "#facc15" if s==6 else
                     "#64748b"
-                };'>""",
+                }};'>""",
                 unsafe_allow_html=True
             )
             
