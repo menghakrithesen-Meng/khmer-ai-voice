@@ -310,18 +310,20 @@ if raw_cookies is None:
     raw_cookies = {}
 
 cookie_key = raw_cookies.get("auth_key")
-cookie_token = raw_cookies.get("session_token")
 saved_key_cookie = raw_cookies.get("saved_key")
 
-# --- AUTO LOGIN BY SESSION COOKIE ---
-if not st.session_state.auth and cookie_key and cookie_token:
+# --- AUTO LOGIN BY auth_key COOKIE ---
+if (not st.session_state.auth) and cookie_key:
     status, days = check_access_key(cookie_key)
-    server_token = get_server_token(cookie_key)
-    if status == "Valid" and cookie_token == server_token:
+    if status == "Valid":
+        # ប្រាកដថាមាន token នៅ server
+        token = get_server_token(cookie_key)
+        if not token:
+            token = create_session(cookie_key)
         st.session_state.auth = True
         st.session_state.ukey = cookie_key
         st.session_state.days = days
-        st.session_state.my_token = cookie_token
+        st.session_state.my_token = token
         time.sleep(0.1)
         st.rerun()
 
@@ -343,8 +345,7 @@ if not st.session_state.auth:
             st.error(status)
             st.stop()
 
-        # ❗ IMPORTANT: មិនទៀត block "Key Active Elsewhere"
-        # New login = overwrite token → kick old browser
+        # Login ថ្មី = សរសេរ token ថ្មី (kick session ចាស់ៗ)
         new_token = create_session(key_input)
 
         st.session_state.auth = True
@@ -352,16 +353,14 @@ if not st.session_state.auth:
         st.session_state.days = days
         st.session_state.my_token = new_token
 
-        # session cookies (auth)
+        # session cookie auth_key
         if remember:
             exp = datetime.datetime.now() + datetime.timedelta(days=30)
             cm.set("auth_key", key_input, expires_at=exp, key="sk")
-            cm.set("session_token", new_token, expires_at=exp, key="st")
         else:
             cm.delete("auth_key")
-            cm.delete("session_token")
 
-        # saved_key cookie (for auto-fill only, 365 days)
+        # saved_key cookie (auto-fill only, 365 days)
         if remember:
             exp_long = datetime.datetime.now() + datetime.timedelta(days=365)
             cm.set("saved_key", key_input, expires_at=exp_long, key="rk")
@@ -374,12 +373,13 @@ if not st.session_state.auth:
 
 # --- CHECK SESSION STILL VALID (kick old browser) ---
 if st.session_state.auth:
-    if get_server_token(st.session_state.ukey) != st.session_state.my_token:
+    server_token = get_server_token(st.session_state.ukey)
+    if (not server_token) or (server_token != st.session_state.my_token):
         st.error("🚨 Session Expired (Logged in elsewhere).")
+        # clear this browser session
         st.session_state.clear()
         cm.delete("auth_key")
-        cm.delete("session_token")
-        # saved_key នៅតែរក្សា → auto-fill key
+        # saved_key នៅតែទុក → auto-fill key
         time.sleep(1)
         st.rerun()
 
@@ -399,11 +399,12 @@ VOICES = {
 with st.sidebar:
     st.success(f"✅ Active: {st.session_state.days} Days")
     if st.button("Logout", type="primary"):
+        # លុប session នៅ server
         delete_session(st.session_state.ukey)
+        # clear session state
         st.session_state.clear()
+        # លុប auth_key (តែ saved_key នៅតែមាន)
         cm.delete("auth_key")
-        cm.delete("session_token")
-        # មិនលុប saved_key → key នៅតែ auto-fill
         st.rerun()
 
     st.divider()
