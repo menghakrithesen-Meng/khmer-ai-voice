@@ -31,12 +31,15 @@ ACTIVE_FILE = "active_sessions.json"
 
 st.markdown("""
 <style>
+    /* Global App Style */
     .stApp { background: linear-gradient(to right, #0f172a, #1e293b); color: white; }
     section[data-testid="stSidebar"] { background-color: #111827; border-right: 1px solid #374151; }
     
+    /* Input Cleanups */
     button[data-testid="stNumberInputStepDown"], button[data-testid="stNumberInputStepUp"] { display: none; }
     div[data-testid="stNumberInput"] input { text-align: center; }
     
+    /* Sidebar Buttons */
     [data-testid="stSidebar"] div[data-testid="column"] button { 
         padding: 0px 2px !important; 
         font-size: 11px !important; 
@@ -47,6 +50,7 @@ st.markdown("""
         text-overflow: ellipsis; 
     }
 
+    /* Line Editor Buttons (Compact) */
     .stTabs div[data-testid="column"] button {
         padding: 0px !important;
         font-size: 12px !important;
@@ -56,12 +60,14 @@ st.markdown("""
         border-radius: 4px;
     }
 
+    /* Active Button Color */
     div[data-testid="column"] button[kind="primary"] { 
         border: 1px solid #ef4444 !important; 
         background-color: #ef4444 !important; 
         color: white !important; 
     }
     
+    /* FORCE TEXT AREA VISIBILITY (Dark Mode) */
     .stTextArea textarea {
         background-color: #0f172a !important;
         color: #ffffff !important;
@@ -70,6 +76,7 @@ st.markdown("""
         border-radius: 6px !important;
     }
 
+    /* SRT Container Card */
     .srt-container {
         background-color: #1e293b;
         padding: 8px;
@@ -99,71 +106,53 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. HELPER FUNCTIONS (WITH ACTIVE SESSIONS)
+# 1. HELPER FUNCTIONS
 # ==========================================
 def load_json(path):
-    if not os.path.exists(path):
-        return {}
+    if not os.path.exists(path): return {}
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return {}
+        with open(path, "r", encoding="utf-8") as f: return json.load(f)
+    except: return {}
 
 def save_json(path, data):
     try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-    except:
-        pass
+        with open(path, "w", encoding="utf-8") as f: json.dump(data, f, indent=2, ensure_ascii=False)
+    except: pass
 
-def load_active_sessions():
-    data = load_json(ACTIVE_FILE)
-    if isinstance(data, dict):
-        return data
-    return {}
+def load_active_sessions(): return load_json(ACTIVE_FILE)
+def get_server_token(user_key): return load_active_sessions().get(user_key)
+def is_key_active(user_key): return user_key in load_active_sessions()
 
-def save_active_sessions(data):
-    save_json(ACTIVE_FILE, data)
-
-def get_server_token(user_key):
-    return load_active_sessions().get(user_key)
-
-def set_session(user_key):
-    """Create/overwrite session token for this key (1 key = 1 active browser)."""
-    token = str(uuid.uuid4())
+def create_session(user_key):
+    new_token = str(uuid.uuid4())
     active = load_active_sessions()
-    active[user_key] = token
-    save_active_sessions(active)
-    return token
+    active[user_key] = new_token
+    save_json(ACTIVE_FILE, active)
+    return new_token
 
 def delete_session(user_key):
     active = load_active_sessions()
     if user_key in active:
         del active[user_key]
-        save_active_sessions(active)
+        save_json(ACTIVE_FILE, active)
 
 def check_access_key(user_key):
     keys_db = load_json(KEYS_FILE)
-    if user_key not in keys_db:
-        return "Invalid Key", 0
+    if user_key not in keys_db: return "Invalid Key", 0
     k_data = keys_db[user_key]
-    if k_data.get("status") != "active":
-        return "Key Disabled", 0
+    if k_data.get("status") != "active": return "Key Disabled", 0
     if not k_data.get("activated_date"):
         k_data["activated_date"] = str(datetime.date.today())
         save_json(KEYS_FILE, keys_db)
     start = datetime.date.fromisoformat(k_data["activated_date"])
     exp = start + datetime.timedelta(days=k_data["duration_days"])
     left = (exp - datetime.date.today()).days
-    if left < 0:
-        return "Expired", 0
+    if left < 0: return "Expired", 0
     return "Valid", left
 
 def save_user_preset(user_key, slot, data, name):
     db = load_json(PRESETS_FILE)
-    if user_key not in db:
-        db[user_key] = {}
+    if user_key not in db: db[user_key] = {}
     data["name"] = name if name else f"{slot}"
     db[user_key][str(slot)] = data
     save_json(PRESETS_FILE, db)
@@ -172,30 +161,28 @@ def get_user_preset(user_key, slot):
     db = load_json(PRESETS_FILE)
     return db.get(user_key, {}).get(str(slot), None)
 
-# Preset apply (SRT)
+# 🔥 FIXED: Callback function to update state BEFORE render
 def apply_preset_to_line_callback(user_key, line_index, slot_id):
     pd = get_user_preset(user_key, slot_id)
-    if not pd:
-        return
+    if not pd: return
     
+    # 1. Update Data Model
     st.session_state.line_settings[line_index]["voice"] = pd["voice"]
     st.session_state.line_settings[line_index]["rate"] = pd["rate"]
     st.session_state.line_settings[line_index]["pitch"] = pd["pitch"]
     st.session_state.line_settings[line_index]["slot"] = slot_id
     
+    # 2. Update Widget Keys directly (This works inside callback)
     st.session_state[f"v{line_index}"] = pd["voice"]
     st.session_state[f"r{line_index}"] = pd["rate"]
     st.session_state[f"p{line_index}"] = pd["pitch"]
 
+# Standard non-callback version for bulk apply
 def apply_preset_to_line_bulk(user_key, line_index, slot_id):
     pd = get_user_preset(user_key, slot_id)
-    if not pd:
-        return
+    if not pd: return
     st.session_state.line_settings[line_index] = {
-        "voice": pd["voice"],
-        "rate": pd["rate"],
-        "pitch": pd["pitch"],
-        "slot": slot_id,
+        "voice": pd["voice"], "rate": pd["rate"], "pitch": pd["pitch"], "slot": slot_id,
     }
 
 async def gen_edge(text, voice, rate, pitch):
@@ -206,8 +193,7 @@ async def gen_edge(text, voice, rate, pitch):
             file_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3").name
             communicate = edge_tts.Communicate(text, voice, rate=rate_str, pitch=pitch_str)
             await communicate.save(file_path)
-            if os.path.getsize(file_path) > 0:
-                return file_path
+            if os.path.getsize(file_path) > 0: return file_path
         except Exception as e:
             print(f"Retry {attempt+1}: {e}")
             time.sleep(1)
@@ -218,16 +204,14 @@ def process_audio(file_path, pad_ms):
         seg = AudioSegment.from_file(file_path)
         pad = AudioSegment.silent(duration=pad_ms)
         return pad + effects.normalize(seg) + pad
-    except:
-        return AudioSegment.from_file(file_path)
+    except: return AudioSegment.from_file(file_path)
 
 def srt_time_to_ms(time_str):
     try:
         start, _ = time_str.split(" --> ")
         h, m, s = start.replace(",", ".").split(":")
         return int(float(h)*3600000 + float(m)*60000 + float(s)*1000)
-    except:
-        return 0
+    except: return 0
 
 def parse_srt(content):
     content = content.replace("\r\n", "\n").replace("\r", "\n")
@@ -235,22 +219,18 @@ def parse_srt(content):
     blocks = content.strip().split("\n\n")
     for b in blocks:
         lines = [l.strip() for l in b.split("\n") if l.strip()]
-        if len(lines) < 2:
-            continue
+        if len(lines) < 2: continue
         time_idx = -1
         for i, l in enumerate(lines):
-            if "-->" in l:
-                time_idx = i
-                break
+            if "-->" in l: time_idx = i; break
         if time_idx != -1 and time_idx + 1 < len(lines):
             text = " ".join(lines[time_idx+1:])
             text = re.sub(r"<[^>]+>", "", text)
-            if text:
-                subs.append({"start": srt_time_to_ms(lines[time_idx]), "text": text})
+            if text: subs.append({"start": srt_time_to_ms(lines[time_idx]), "text": text})
     return subs
 
 # ==========================================
-# 2. ADMIN PANEL (generate keys + view sessions)
+# 2. AUTH & ADMIN
 # ==========================================
 if st.query_params.get("view") == "admin":
     st.title("🔐 Admin Panel")
@@ -261,131 +241,47 @@ if st.query_params.get("view") == "admin":
             days = st.number_input("Days", 30)
             if st.button("Generate Key"):
                 k = "KHM-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
-                db = load_json(KEYS_FILE)
-                db[k] = {"duration_days": days, "activated_date": None, "status": "active"}
-                save_json(KEYS_FILE, db)
-                st.success(f"New Key: {k}")
+                db = load_json(KEYS_FILE); db[k] = {"duration_days": days, "activated_date": None, "status": "active"}; save_json(KEYS_FILE, db); st.success(f"New Key: {k}")
         with c2:
-            kick_key = st.text_input("Kick key")
-            if st.button("Kick This Key"):
-                delete_session(kick_key)
-                st.success("Key session cleared.")
-            if st.button("Reset ALL Sessions"):
-                save_active_sessions({})
-                st.success("All sessions cleared.")
-        st.subheader("All Keys")
-        st.json(load_json(KEYS_FILE))
-        st.subheader("Active Sessions")
-        st.json(load_active_sessions())
+            k_kick = st.text_input("Kick Key"); 
+            if st.button("Kick"): delete_session(k_kick); st.success("Kicked")
+            if st.button("Reset ALL"): save_json(ACTIVE_FILE, {}); st.success("Reset Done")
+        st.write("Active Sessions"); st.json(load_active_sessions())
     st.stop()
 
-# ==========================================
-# 3. AUTH (1 key = 1 browser)
-# ==========================================
 c1, c2, c3 = st.columns([1, 2, 1])
 with c2:
-    try:
-        st.image("logo.png", width=150)
-    except:
-        pass
+    try: st.image("logo.png", width=150)
+    except: pass
 
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
-
 cm = stx.CookieManager(key="mgr")
 
-if "auth" not in st.session_state:
-    st.session_state.auth = False
-if "my_token" not in st.session_state:
-    st.session_state.my_token = None
-if "cookie_retry" not in st.session_state:
-    st.session_state.cookie_retry = 0
+if "auth" not in st.session_state: st.session_state.auth = False
+cookie_key = cm.get("auth_key"); cookie_token = cm.get("session_token")
 
-raw_cookies = cm.get_all()
+if not st.session_state.auth and cookie_key and cookie_token:
+    status, days = check_access_key(cookie_key); server_token = get_server_token(cookie_key)
+    if status == "Valid" and cookie_token == server_token: st.session_state.auth = True; st.session_state.ukey = cookie_key; st.session_state.days = days; st.session_state.my_token = cookie_token; time.sleep(0.1); st.rerun()
 
-# wait for cookies to load (avoid Remember fail on fast refresh)
-if raw_cookies is None and st.session_state.cookie_retry < 5:
-    st.session_state.cookie_retry += 1
-    time.sleep(0.3)
-    st.rerun()
-
-if raw_cookies is None:
-    raw_cookies = {}
-
-cookie_key = raw_cookies.get("auth_key")
-cookie_token = raw_cookies.get("session_token")
-saved_key_cookie = raw_cookies.get("saved_key")
-
-# --- AUTO LOGIN BY auth_key + session_token COOKIE ---
-if (not st.session_state.auth) and cookie_key and cookie_token:
-    status, days = check_access_key(cookie_key)
-    server_token = get_server_token(cookie_key)
-    if status == "Valid" and server_token == cookie_token:
-        st.session_state.auth = True
-        st.session_state.ukey = cookie_key
-        st.session_state.days = days
-        st.session_state.my_token = cookie_token
-        time.sleep(0.05)
-        st.rerun()
-    else:
-        # invalid / expired / replaced elsewhere → clear auth cookies
-        cm.delete("auth_key")
-        cm.delete("session_token")
-
-# --- LOGIN FORM ---
 if not st.session_state.auth:
     st.markdown("### 🔐 Login Required")
     with st.form("login"):
-        key_input = st.text_input(
-            "Access Key",
-            type="password",
-            value=saved_key_cookie or ""
-        )
-        remember = st.checkbox("Remember me", value=True)
-        btn = st.form_submit_button("Login", type="primary")
-
+        key_input = st.text_input("Access Key", type="password"); remember = st.checkbox("Remember me", value=True); btn = st.form_submit_button("Login", type="primary")
     if btn:
         status, days = check_access_key(key_input)
-        if status != "Valid":
-            st.error(status)
-            st.stop()
-
-        # New login = overwrite token (kick other browser)
-        new_token = set_session(key_input)
-
-        st.session_state.auth = True
-        st.session_state.ukey = key_input
-        st.session_state.days = days
-        st.session_state.my_token = new_token
-
-        if remember:
-            exp = datetime.datetime.now() + datetime.timedelta(days=30)
-            cm.set("auth_key", key_input, expires_at=exp, key="sk")
-            cm.set("session_token", new_token, expires_at=exp, key="st")
-            exp_long = datetime.datetime.now() + datetime.timedelta(days=365)
-            cm.set("saved_key", key_input, expires_at=exp_long, key="rk")
-        else:
-            cm.delete("auth_key")
-            cm.delete("session_token")
-            cm.delete("saved_key")
-
-        st.success("Success!")
-        st.rerun()
+        if status != "Valid": st.error(status); st.stop()
+        if is_key_active(key_input): st.error("⛔ Access Denied! Key Active Elsewhere"); st.stop()
+        new_token = create_session(key_input); st.session_state.auth = True; st.session_state.ukey = key_input; st.session_state.days = days; st.session_state.my_token = new_token
+        if remember: exp = datetime.datetime.now() + datetime.timedelta(days=30); cm.set("auth_key", key_input, expires_at=exp, key="sk"); cm.set("session_token", new_token, expires_at=exp, key="st"); time.sleep(1.0)
+        st.success("Success!"); st.rerun()
     st.stop()
 
-# --- CHECK SESSION STILL VALID (kick old browser) ---
 if st.session_state.auth:
-    server_token = get_server_token(st.session_state.ukey)
-    if (not server_token) or (server_token != st.session_state.my_token):
-        st.error("🚨 Session Expired (This key is active in another browser).")
-        st.session_state.clear()
-        cm.delete("auth_key")
-        cm.delete("session_token")
-        # keep saved_key for auto-fill
-        time.sleep(1)
-        st.rerun()
+    if get_server_token(st.session_state.ukey) != st.session_state.my_token: st.error("🚨 Session Expired."); st.session_state.clear(); cm.delete("auth_key"); cm.delete("session_token"); time.sleep(1); st.rerun()
 
 # ==========================================
-# 4. MAIN APP
+# 3. MAIN APP
 # ==========================================
 VOICES = {
     "Sreymom (Khmer)": "km-KH-SreymomNeural",
@@ -399,80 +295,44 @@ VOICES = {
 
 with st.sidebar:
     st.success(f"✅ Active: {st.session_state.days} Days")
-    st.caption(f"KEY: {st.session_state.ukey[:8]}…")
-
-    if st.button("Logout", type="primary"):
-        delete_session(st.session_state.ukey)
-        st.session_state.clear()
-        cm.delete("auth_key")
-        cm.delete("session_token")
-        # saved_key មិនលុប → auto-fill key នៅ form
-        st.rerun()
-
-    st.divider()
-    st.subheader("⚙️ Settings")
-    if "g_voice" not in st.session_state:
-        st.session_state.g_voice = "Sreymom (Khmer)"
-    if "g_rate" not in st.session_state:
-        st.session_state.g_rate = 0
-    if "g_pitch" not in st.session_state:
-        st.session_state.g_pitch = 0
-
-    v_sel = st.selectbox(
-        "Voice", list(VOICES.keys()),
-        index=list(VOICES.keys()).index(st.session_state.g_voice)
-    )
+    if st.button("Logout", type="primary"): delete_session(st.session_state.ukey); st.session_state.clear(); cm.delete("auth_key"); cm.delete("session_token"); st.rerun()
+    st.divider(); st.subheader("⚙️ Settings")
+    if "g_voice" not in st.session_state: st.session_state.g_voice = "Sreymom (Khmer)"
+    if "g_rate" not in st.session_state: st.session_state.g_rate = 0
+    if "g_pitch" not in st.session_state: st.session_state.g_pitch = 0
+    v_sel = st.selectbox("Voice", list(VOICES.keys()), index=list(VOICES.keys()).index(st.session_state.g_voice))
     r_sel = st.slider("Speed", -50, 50, value=st.session_state.g_rate)
     p_sel = st.slider("Pitch", -50, 50, value=st.session_state.g_pitch)
     pad_sel = st.number_input("Padding (ms)", value=80)
-
-    st.session_state.g_voice = v_sel
-    st.session_state.g_rate = r_sel
-    st.session_state.g_pitch = p_sel
+    st.session_state.g_voice = v_sel; st.session_state.g_rate = r_sel; st.session_state.g_pitch = p_sel
     
-    st.divider()
-    st.subheader("💾 Presets (Save Here)")
+    st.divider(); st.subheader("💾 Presets (Save Here)")
     preset_name_input = st.text_input("Name", placeholder="Ex: Boy")
+    # SIDEBAR LAYOUT RESTORED (3:1)
     for i in range(1, 7):
         c1, c2 = st.columns([3, 1])
-        saved_p = get_user_preset(st.session_state.ukey, i)
-        btn_name = saved_p["name"] if saved_p else f"Slot {i}"
+        saved_p = get_user_preset(st.session_state.ukey, i); btn_name = saved_p["name"] if saved_p else f"Slot {i}"
         with c1:
             if st.button(f"📂 {btn_name}", key=f"l{i}", use_container_width=True):
-                if saved_p:
-                    st.session_state.g_voice = saved_p["voice"]
-                    st.session_state.g_rate = saved_p["rate"]
-                    st.session_state.g_pitch = saved_p["pitch"]
-                    st.rerun()
+                if saved_p: st.session_state.g_voice = saved_p["voice"]; st.session_state.g_rate = saved_p["rate"]; st.session_state.g_pitch = saved_p["pitch"]; st.rerun()
         with c2:
-            if st.button("💾", key=f"s{i}", use_container_width=True):
-                data = {"voice": v_sel, "rate": r_sel, "pitch": p_sel}
-                save_user_preset(st.session_state.ukey, i, data, preset_name_input)
-                st.toast(f"Saved Slot {i}!")
-                time.sleep(0.3)
-                st.rerun()
+            if st.button(f"💾", key=f"s{i}", use_container_width=True): 
+                data = {"voice": v_sel, "rate": r_sel, "pitch": p_sel}; save_user_preset(st.session_state.ukey, i, data, preset_name_input); st.toast(f"Saved Slot {i}!"); time.sleep(0.5); st.rerun()
 
 tab1, tab2 = st.tabs(["📝 Text Mode", "🎬 SRT Multi-Speaker"])
 
-# --- TAB 1: TEXT ---
 with tab1:
     txt = st.text_area("Input Text...", height=150)
     if st.button("Generate Audio 🎵", type="primary"):
         if txt:
             with st.spinner("Generating..."):
                 try:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
+                    loop = asyncio.new_event_loop(); asyncio.set_event_loop(loop)
                     raw = loop.run_until_complete(gen_edge(txt, VOICES[v_sel], r_sel, p_sel))
-                    final = process_audio(raw, pad_sel)
-                    buf = io.BytesIO()
-                    final.export(buf, format="mp3")
-                    st.audio(buf)
-                    st.download_button("Download MP3", buf, "audio.mp3", "audio/mp3")
-                except Exception as e:
-                    st.error(str(e))
+                    final = process_audio(raw, pad_sel); buf = io.BytesIO(); final.export(buf, format="mp3")
+                    st.audio(buf); st.download_button("Download MP3", buf, "audio.mp3", "audio/mp3")
+                except Exception as e: st.error(str(e))
 
-# --- TAB 2: SRT MULTI-SPEAKER ---
 with tab2:
     srt_file = st.file_uploader("Upload SRT", type="srt", key="srt_up")
     if srt_file:
@@ -480,64 +340,41 @@ with tab2:
             content = srt_file.getvalue().decode("utf-8")
             st.session_state.srt_lines = parse_srt(content)
             st.session_state.last_srt = srt_file.name
-            st.session_state.line_settings = [
-                {
-                    "voice": st.session_state.g_voice,
-                    "rate": st.session_state.g_rate,
-                    "pitch": st.session_state.g_pitch,
-                    "slot": None
-                }
-                for _ in st.session_state.srt_lines
-            ]
+            st.session_state.line_settings = [{"voice": st.session_state.g_voice, "rate": st.session_state.g_rate, "pitch": st.session_state.g_pitch, "slot": None} for _ in st.session_state.srt_lines]
         
         st.markdown("#### 🎭 Apply Preset to All")
-        preset_opts = ["-- Select --"] + [
-            f"Slot {i}: {get_user_preset(st.session_state.ukey, i).get('name', f'Slot {i}')}"
-            for i in range(1,7) if get_user_preset(st.session_state.ukey, i)
-        ]
-        preset_map = {
-            f"Slot {i}: {get_user_preset(st.session_state.ukey, i).get('name', f'Slot {i}')}": i
-            for i in range(1,7) if get_user_preset(st.session_state.ukey, i)
-        }
+        preset_opts = ["-- Select --"] + [f"Slot {i}: {get_user_preset(st.session_state.ukey, i).get('name', f'Slot {i}')}" for i in range(1,7) if get_user_preset(st.session_state.ukey, i)]
+        preset_map = {f"Slot {i}: {get_user_preset(st.session_state.ukey, i).get('name', f'Slot {i}')}": i for i in range(1,7) if get_user_preset(st.session_state.ukey, i)}
         
         c_all_1, c_all_2 = st.columns([3, 1])
         srt_def = c_all_1.selectbox("Choose Preset", preset_opts, label_visibility="collapsed")
         if c_all_2.button("Apply All"):
             if srt_def in preset_map:
                 sid = preset_map[srt_def]
-                for idx in range(len(st.session_state.srt_lines)):
-                    apply_preset_to_line_bulk(st.session_state.ukey, idx, sid)
+                for idx in range(len(st.session_state.srt_lines)): apply_preset_to_line_bulk(st.session_state.ukey, idx, sid)
                 st.rerun()
 
         st.divider()
         st.write("#### ✂️ Line Editor")
         
+        # --- EDITOR LOOP ---
         for idx, sub in enumerate(st.session_state.srt_lines):
             cur = st.session_state.line_settings[idx]
             s = cur["slot"]
             
-            st.markdown(
-                f"""<div class='srt-container' style='border-left: 5px solid {{
-                    "#f97316" if s==1 else
-                    "#22c55e" if s==2 else
-                    "#3b82f6" if s==3 else
-                    "#e11d48" if s==4 else
-                    "#a855f7" if s==5 else
-                    "#facc15" if s==6 else
-                    "#64748b"
-                }};'>""",
-                unsafe_allow_html=True
-            )
+            # Container Start
+            st.markdown(f"""<div class='srt-container' style='border-left: 5px solid {
+                "#f97316" if s==1 else "#22c55e" if s==2 else "#3b82f6" if s==3 else "#e11d48" if s==4 else "#a855f7" if s==5 else "#facc15" if s==6 else "#64748b"
+            };'>""", unsafe_allow_html=True)
             
+            # Header
             p_name = get_user_preset(st.session_state.ukey, s)['name'] if s else ""
-            st.markdown(
-                f"""<div class='status-line'>
-                    <span><b>#{idx+1}</b> &nbsp; {sub['start']}ms</span>
-                    <span class='preset-badge'>{p_name}</span>
-                </div>""",
-                unsafe_allow_html=True
-            )
+            st.markdown(f"""<div class='status-line'>
+                <span><b>#{idx+1}</b> &nbsp; {sub['start']}ms</span>
+                <span class='preset-badge'>{p_name}</span>
+            </div>""", unsafe_allow_html=True)
             
+            # Text Area (Visible)
             new_text = st.text_area(
                 label=f"hidden_{idx}",
                 value=sub['text'], 
@@ -548,36 +385,20 @@ with tab2:
             if new_text != st.session_state.srt_lines[idx]['text']:
                 st.session_state.srt_lines[idx]['text'] = new_text
 
+            # Controls
             c_voice, c_rate, c_pitch = st.columns([2, 1, 1])
             
-            v = c_voice.selectbox(
-                "V",
-                list(VOICES.keys()),
-                index=list(VOICES.keys()).index(cur["voice"]),
-                key=f"v{idx}",
-                label_visibility="collapsed"
-            )
-            r = c_rate.number_input(
-                "R",
-                -50,
-                50,
-                value=cur["rate"],
-                key=f"r{idx}",
-                label_visibility="collapsed"
-            )
-            p = c_pitch.number_input(
-                "P",
-                -50,
-                50,
-                value=cur["pitch"],
-                key=f"p{idx}",
-                label_visibility="collapsed"
-            )
+            # Widgets (Keys are crucial for Callback)
+            v = c_voice.selectbox("V", list(VOICES.keys()), index=list(VOICES.keys()).index(cur["voice"]), key=f"v{idx}", label_visibility="collapsed")
+            r = c_rate.number_input("R", -50, 50, value=cur["rate"], key=f"r{idx}", label_visibility="collapsed")
+            p = c_pitch.number_input("P", -50, 50, value=cur["pitch"], key=f"p{idx}", label_visibility="collapsed")
             
+            # Sync back (Double check)
             st.session_state.line_settings[idx]["voice"] = v
             st.session_state.line_settings[idx]["rate"] = r
             st.session_state.line_settings[idx]["pitch"] = p
             
+            # PRESET BUTTONS (USING CALLBACKS TO FIX ERROR)
             st.markdown("<div style='margin-top:5px;'></div>", unsafe_allow_html=True)
             
             cols = st.columns(6)
@@ -586,45 +407,33 @@ with tab2:
                 lbl = pd['name'][:3] if pd else str(i)
                 kind = "primary" if s==i else "secondary"
                 
+                # 🔥 USE CALLBACK (on_click) instead of checking return value
                 cols[i-1].button(
                     lbl, 
                     key=f"b{idx}{i}", 
                     type=kind,
-                    on_click=apply_preset_to_line_callback,
+                    on_click=apply_preset_to_line_callback, # Execute BEFORE render
                     args=(st.session_state.ukey, idx, i)
                 )
 
-            st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True) # End Container
 
         if st.button("🚀 Generate Full Audio", type="primary"):
-            progress = st.progress(0)
-            status = st.empty()
+            progress = st.progress(0); status = st.empty()
             try:
-                last_end = st.session_state.srt_lines[-1]["start"] + 10000
-                final_mix = AudioSegment.silent(duration=last_end)
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                last_end = st.session_state.srt_lines[-1]["start"] + 10000; final_mix = AudioSegment.silent(duration=last_end)
+                loop = asyncio.new_event_loop(); asyncio.set_event_loop(loop)
                 for i, sub in enumerate(st.session_state.srt_lines):
                     status.text(f"Processing {i+1}/{len(st.session_state.srt_lines)}...")
                     sett = st.session_state.line_settings[i]
                     current_text = st.session_state.srt_lines[i]['text']
-                    if not current_text.strip():
-                        continue
-                    raw_path = loop.run_until_complete(
-                        gen_edge(current_text, VOICES[sett["voice"]], sett["rate"], sett["pitch"])
-                    )
+                    if not current_text.strip(): continue
+                    raw_path = loop.run_until_complete(gen_edge(current_text, VOICES[sett["voice"]], sett["rate"], sett["pitch"]))
                     clip = AudioSegment.from_file(raw_path)
                     final_mix = final_mix.overlay(clip, position=sub["start"])
-                    try:
-                        os.remove(raw_path)
-                    except:
-                        pass
+                    try: os.remove(raw_path)
+                    except: pass
                     progress.progress((i+1)/len(st.session_state.srt_lines))
-                status.success("Done!")
-                buf = io.BytesIO()
-                final_mix.export(buf, format="mp3")
-                buf.seek(0)
-                st.audio(buf)
-                st.download_button("Download Conversation", buf, "conversation.mp3", "audio/mp3")
-            except Exception as e:
-                status.error(f"Error: {e}")
+                status.success("Done!"); buf = io.BytesIO(); final_mix.export(buf, format="mp3"); buf.seek(0)
+                st.audio(buf); st.download_button("Download Conversation", buf, "conversation.mp3", "audio/mp3")
+            except Exception as e: status.error(f"Error: {e}")
