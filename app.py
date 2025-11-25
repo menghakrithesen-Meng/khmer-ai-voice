@@ -130,10 +130,8 @@ def load_active_sessions():
 def get_server_token(user_key):
     return load_active_sessions().get(user_key)
 
-def is_key_active(user_key):
-    return user_key in load_active_sessions()
-
 def create_session(user_key):
+    """Create/overwrite session token for this key (1 key = 1 active browser)."""
     new_token = str(uuid.uuid4())
     active = load_active_sessions()
     active[user_key] = new_token
@@ -300,20 +298,17 @@ if "auth" not in st.session_state:
 if "cookie_retry" not in st.session_state:
     st.session_state.cookie_retry = 0
 
-# 🎯 LOAD ALL COOKIES (ជំនួស get ជាបន្ទាប់បន្សំ)
+# 🎯 LOAD ALL COOKIES
 raw_cookies = cm.get_all()
 
-# បើ CookieManager មិនទាន់ផ្ញើ cookies មក (run លើកដំបូង)
 if raw_cookies is None and st.session_state.cookie_retry < 5:
     st.session_state.cookie_retry += 1
-    time.sleep(0.3)  # delay តិចៗ
+    time.sleep(0.3)
     st.rerun()
 
-# បន្ទាប់ពី retry ពេញហើយ raw_cookies នៅ None → ដាក់ជា {} ទៅ
 if raw_cookies is None:
     raw_cookies = {}
 
-# យកតម្លៃពី dict (auth_key / session_token / saved_key)
 cookie_key = raw_cookies.get("auth_key")
 cookie_token = raw_cookies.get("session_token")
 saved_key_cookie = raw_cookies.get("saved_key")
@@ -337,20 +332,21 @@ if not st.session_state.auth:
         key_input = st.text_input(
             "Access Key",
             type="password",
-            value=saved_key_cookie or ""   # auto-fill from saved_key cookie
+            value=saved_key_cookie or ""
         )
         remember = st.checkbox("Remember me", value=True)
         btn = st.form_submit_button("Login", type="primary")
+
     if btn:
         status, days = check_access_key(key_input)
         if status != "Valid":
             st.error(status)
             st.stop()
-        if is_key_active(key_input):
-            st.error("⛔ Access Denied! Key Active Elsewhere")
-            st.stop()
 
+        # ❗ IMPORTANT: មិនទៀត block "Key Active Elsewhere"
+        # New login = overwrite token → kick old browser
         new_token = create_session(key_input)
+
         st.session_state.auth = True
         st.session_state.ukey = key_input
         st.session_state.days = days
@@ -376,14 +372,14 @@ if not st.session_state.auth:
         st.rerun()
     st.stop()
 
-# --- CHECK SESSION STILL VALID ---
+# --- CHECK SESSION STILL VALID (kick old browser) ---
 if st.session_state.auth:
     if get_server_token(st.session_state.ukey) != st.session_state.my_token:
-        st.error("🚨 Session Expired.")
+        st.error("🚨 Session Expired (Logged in elsewhere).")
         st.session_state.clear()
         cm.delete("auth_key")
         cm.delete("session_token")
-        # NOTE: do NOT delete saved_key → keep key for auto-fill
+        # saved_key នៅតែរក្សា → auto-fill key
         time.sleep(1)
         st.rerun()
 
@@ -407,7 +403,7 @@ with st.sidebar:
         st.session_state.clear()
         cm.delete("auth_key")
         cm.delete("session_token")
-        # ❗ មិនលុប saved_key ដើម្បីឱ្យ Access Key នៅតែ auto-fill
+        # មិនលុប saved_key → key នៅតែ auto-fill
         st.rerun()
 
     st.divider()
