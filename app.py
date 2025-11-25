@@ -13,177 +13,146 @@ import io
 import re
 import uuid
 import extra_streamlit_components as stx
+from PIL import Image
 
 # ==========================================
-# 0. CONFIG & HEADERS
+# 0. CONFIG & SETUP
 # ==========================================
-st.set_page_config(page_title="Khmer AI Voice Pro", page_icon="🎙️", layout="wide")
+try:
+    img_icon = Image.open("logo.png")
+except:
+    img_icon = "🎙️"
 
-# ព្យាយាមប្រើ Header នេះនៅពេលដែល Library ត្រូវការ Request (ជាការកំណត់ Global)
-# ទោះបីជា Server នៅ US ក៏ដោយ កូដនេះប្រាប់ថាជាអ្នកប្រើប្រាស់ខ្មែរ
-HEADERS = {
-    "Accept-Language": "km-KH,km;q=0.9",  # ប្រាប់ថាខ្ញុំជាអ្នកអានខ្មែរ
-    "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
-}
+st.set_page_config(page_title="Khmer AI Voice Pro", page_icon=img_icon, layout="wide")
 
 KEYS_FILE = "web_keys.json"
 PRESETS_FILE = "user_presets.json"
-ACTIVE_FILE = "active_sessions.json"  # Format: { "USER_KEY": "DEVICE_UUID" }
+ACTIVE_FILE = "active_sessions.json"
 
-# បង្កើត Device ID សម្រាប់ Browser Session នីមួយៗ (Unique per tab/browser)
-if "device_id" not in st.session_state:
-    st.session_state.device_id = str(uuid.uuid4())
-
-# 🎨 CUSTOM CSS
 st.markdown("""
 <style>
+    /* Global App Style */
     .stApp { background: linear-gradient(to right, #0f172a, #1e293b); color: white; }
     section[data-testid="stSidebar"] { background-color: #111827; border-right: 1px solid #374151; }
     
-    /* Hide Number Input Steppers */
-    button[data-testid="stNumberInputStepDown"], button[data-testid="stNumberInputStepUp"] {
-        display: none;
-    }
-    div[data-testid="stNumberInput"] input {
-        text-align: center;
+    /* Input Cleanups */
+    button[data-testid="stNumberInputStepDown"], button[data-testid="stNumberInputStepUp"] { display: none; }
+    div[data-testid="stNumberInput"] input { text-align: center; }
+    
+    /* Sidebar Buttons */
+    [data-testid="stSidebar"] div[data-testid="column"] button { 
+        padding: 0px 2px !important; 
+        font-size: 11px !important; 
+        min-height: 32px !important; 
+        width: 100%; 
+        white-space: nowrap; 
+        overflow: hidden; 
+        text-overflow: ellipsis; 
     }
 
-    /* Small Preset Buttons */
-    div[data-testid="column"] button {
-        padding: 0px 2px !important;
-        font-size: 11px !important;
-        min-height: 32px !important;
+    /* Line Editor Buttons (Compact) */
+    .stTabs div[data-testid="column"] button {
+        padding: 0px !important;
+        font-size: 12px !important;
+        font-weight: bold !important;
+        min-height: 35px !important;
         width: 100%;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        border-radius: 4px;
+    }
+
+    /* Active Button Color */
+    div[data-testid="column"] button[kind="primary"] { 
+        border: 1px solid #ef4444 !important; 
+        background-color: #ef4444 !important; 
+        color: white !important; 
     }
     
-    /* Active Button Color */
-    div[data-testid="column"] button[kind="primary"] {
-        border-color: #ff4b4b !important;
-        background-color: #ff4b4b !important;
-        color: white !important;
+    /* FORCE TEXT AREA VISIBILITY (Dark Mode) */
+    .stTextArea textarea {
+        background-color: #0f172a !important;
+        color: #ffffff !important;
+        font-size: 16px !important;
+        border: 1px solid #475569 !important;
+        border-radius: 6px !important;
     }
 
-    /* SRT Box */
-    .srt-box { 
-        background: #1e293b; 
-        border: 1px solid #334155; 
-        border-radius: 6px; 
-        padding: 10px; 
-        margin-bottom: 5px; 
-        border-left: 4px solid #8b5cf6; 
+    /* SRT Container Card */
+    .srt-container {
+        background-color: #1e293b;
+        padding: 8px;
+        border-radius: 8px;
+        border: 1px solid #334155;
+        margin-bottom: 12px;
     }
-
-    /* 🎨 Color per Preset Slot */
-    .srt-box.slot-1 { border-left-color: #f97316 !important; }  /* orange */
-    .srt-box.slot-2 { border-left-color: #22c55e !important; }  /* green */
-    .srt-box.slot-3 { border-left-color: #3b82f6 !important; }  /* blue */
-    .srt-box.slot-4 { border-left-color: #e11d48 !important; }  /* rose */
-    .srt-box.slot-5 { border-left-color: #a855f7 !important; }  /* purple */
-    .srt-box.slot-6 { border-left-color: #facc15 !important; }  /* yellow */
-
-    /* Preset label pill */
-    .preset-tag {
-        display: inline-block;
+    
+    .status-line {
+        font-size: 12px;
+        color: #94a3b8;
+        margin-bottom: 5px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .preset-badge {
+        background: #334155;
+        color: #cbd5e1;
         padding: 2px 6px;
-        border-radius: 999px;
-        font-size: 11px;
-        background: #4b5563;
-        margin-left: 6px;
-        color: #e5e7eb;
+        border-radius: 4px;
+        font-size: 10px;
+        border: 1px solid #475569;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. FUNCTIONS
+# 1. HELPER FUNCTIONS
 # ==========================================
 def load_json(path):
-    if not os.path.exists(path):
-        return {}
+    if not os.path.exists(path): return {}
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+        with open(path, "r", encoding="utf-8") as f: return json.load(f)
+    except: return {}
 
 def save_json(path, data):
     try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-    except Exception:
-        pass
+        with open(path, "w", encoding="utf-8") as f: json.dump(data, f, indent=2, ensure_ascii=False)
+    except: pass
 
-# --- ACTIVE KEYS (1 Key = 1 Device ID) ---
-def load_active_sessions():
-    data = load_json(ACTIVE_FILE)
-    if isinstance(data, dict):
-        return data
-    return {}
+def load_active_sessions(): return load_json(ACTIVE_FILE)
+def get_server_token(user_key): return load_active_sessions().get(user_key)
+def is_key_active(user_key): return user_key in load_active_sessions()
 
-def save_active_sessions(data):
-    save_json(ACTIVE_FILE, data)
-
-# --- AUTH ---
-def check_access_key(user_key):
-    keys_db = load_json(KEYS_FILE)
-    if user_key not in keys_db:
-        return "Invalid Key", 0
-    k_data = keys_db[user_key]
-    if k_data.get("status") != "active":
-        return "Key Disabled", 0
-    
-    # Activate on first use
-    if not k_data.get("activated_date"):
-        k_data["activated_date"] = str(datetime.date.today())
-        save_json(KEYS_FILE, keys_db)
-    
-    start = datetime.date.fromisoformat(k_data["activated_date"])
-    exp = start + datetime.timedelta(days=k_data["duration_days"])
-    left = (exp - datetime.date.today()).days
-    
-    if left < 0:
-        return "Expired", 0
-    return "Valid", left
-
-def login_logic(user_key, current_device_id):
-    """
-    Core Login Logic:
-    1. Check Valid Key
-    2. Check if Key is used by another Device ID
-    """
-    status, days = check_access_key(user_key)
-    if status != "Valid":
-        return status, days
-
+def create_session(user_key):
+    new_token = str(uuid.uuid4())
     active = load_active_sessions()
-    
-    # ប្រសិនបើ Key នេះកំពុងប្រើ ហើយ Device ID មិនដូចគ្នា -> Block
-    if user_key in active:
-        recorded_device = active[user_key]
-        if recorded_device != current_device_id:
-            # Key is active on another browser
-            return "Key is active on another browser", days
+    active[user_key] = new_token
+    save_json(ACTIVE_FILE, active)
+    return new_token
 
-    # Save Session
-    active[user_key] = current_device_id
-    save_active_sessions(active)
-    
-    return "Valid", days
-
-def logout_key(user_key):
+def delete_session(user_key):
     active = load_active_sessions()
     if user_key in active:
         del active[user_key]
-        save_active_sessions(active)
+        save_json(ACTIVE_FILE, active)
 
-# --- PRESETS & AUDIO ---
+def check_access_key(user_key):
+    keys_db = load_json(KEYS_FILE)
+    if user_key not in keys_db: return "Invalid Key", 0
+    k_data = keys_db[user_key]
+    if k_data.get("status") != "active": return "Key Disabled", 0
+    if not k_data.get("activated_date"):
+        k_data["activated_date"] = str(datetime.date.today())
+        save_json(KEYS_FILE, keys_db)
+    start = datetime.date.fromisoformat(k_data["activated_date"])
+    exp = start + datetime.timedelta(days=k_data["duration_days"])
+    left = (exp - datetime.date.today()).days
+    if left < 0: return "Expired", 0
+    return "Valid", left
+
 def save_user_preset(user_key, slot, data, name):
     db = load_json(PRESETS_FILE)
-    if user_key not in db:
-        db[user_key] = {}
+    if user_key not in db: db[user_key] = {}
     data["name"] = name if name else f"{slot}"
     db[user_key][str(slot)] = data
     save_json(PRESETS_FILE, db)
@@ -192,10 +161,24 @@ def get_user_preset(user_key, slot):
     db = load_json(PRESETS_FILE)
     return db.get(user_key, {}).get(str(slot), None)
 
-def apply_preset_to_line(user_key, line_index, slot_id):
+# 🔥 Callback function to update state BEFORE render (for SRT presets)
+def apply_preset_to_line_callback(user_key, line_index, slot_id):
     pd = get_user_preset(user_key, slot_id)
-    if not pd:
-        return
+    if not pd: return
+    
+    st.session_state.line_settings[line_index]["voice"] = pd["voice"]
+    st.session_state.line_settings[line_index]["rate"] = pd["rate"]
+    st.session_state.line_settings[line_index]["pitch"] = pd["pitch"]
+    st.session_state.line_settings[line_index]["slot"] = slot_id
+    
+    st.session_state[f"v{line_index}"] = pd["voice"]
+    st.session_state[f"r{line_index}"] = pd["rate"]
+    st.session_state[f"p{line_index}"] = pd["pitch"]
+
+# non-callback version for bulk apply
+def apply_preset_to_line_bulk(user_key, line_index, slot_id):
+    pd = get_user_preset(user_key, slot_id)
+    if not pd: return
     st.session_state.line_settings[line_index] = {
         "voice": pd["voice"],
         "rate": pd["rate"],
@@ -204,52 +187,54 @@ def apply_preset_to_line(user_key, line_index, slot_id):
     }
 
 async def gen_edge(text, voice, rate, pitch):
-    # Edge TTS មិនប្រើ Header ផ្ទាល់ក្នុង Function នេះទេ ប៉ុន្តែវាដំណើរការល្អជាមួយ Unicode ខ្មែរ
-    file_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3").name
-    rate_str = f"{rate:+d}%" if rate != 0 else "+0%"
-    pitch_str = f"{pitch:+d}Hz" if pitch != 0 else "+0Hz"
-    communicate = edge_tts.Communicate(text, voice, rate=rate_str, pitch=pitch_str)
-    await communicate.save(file_path)
-    return file_path
+    rate_str = f"{rate:+d}%" if rate!=0 else "+0%"
+    pitch_str = f"{pitch:+d}Hz" if pitch!=0 else "+0Hz"
+    for attempt in range(3):
+        try:
+            file_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3").name
+            communicate = edge_tts.Communicate(text, voice, rate=rate_str, pitch=pitch_str)
+            await communicate.save(file_path)
+            if os.path.getsize(file_path) > 0: return file_path
+        except Exception as e:
+            print(f"Retry {attempt+1}: {e}")
+            time.sleep(1)
+    raise Exception("Failed after 3 attempts.")
 
 def process_audio(file_path, pad_ms):
     try:
         seg = AudioSegment.from_file(file_path)
         pad = AudioSegment.silent(duration=pad_ms)
         return pad + effects.normalize(seg) + pad
-    except Exception:
-        return AudioSegment.from_file(file_path)
+    except: return AudioSegment.from_file(file_path)
 
 def srt_time_to_ms(time_str):
     try:
-        start, end = time_str.split(" --> ")
+        start, _ = time_str.split(" --> ")
         h, m, s = start.replace(",", ".").split(":")
-        start_ms = int(float(h) * 3600000 + float(m) * 60000 + float(s) * 1000)
-        return start_ms
-    except Exception:
-        return 0
+        return int(float(h)*3600000 + float(m)*60000 + float(s)*1000)
+    except: return 0
 
 def parse_srt(content):
+    content = content.replace("\r\n", "\n").replace("\r", "\n")
     subs = []
-    blocks = re.split(r"\n\s*\n", content.strip())
+    blocks = content.strip().split("\n\n")
     for b in blocks:
-        lines = b.strip().split("\n")
-        if len(lines) >= 3:
-            time_idx = 1
-            if "-->" not in lines[1]:
-                for i, l in enumerate(lines):
-                    if "-->" in l:
-                        time_idx = i
-                        break
-            start_ms = srt_time_to_ms(lines[time_idx])
-            text = " ".join(lines[time_idx + 1 :])
+        lines = [l.strip() for l in b.split("\n") if l.strip()]
+        if len(lines) < 2: continue
+        time_idx = -1
+        for i, l in enumerate(lines):
+            if "-->" in l:
+                time_idx = i
+                break
+        if time_idx != -1 and time_idx + 1 < len(lines):
+            text = " ".join(lines[time_idx+1:])
             text = re.sub(r"<[^>]+>", "", text)
-            if text.strip():
-                subs.append({"start": start_ms, "text": text})
+            if text:
+                subs.append({"start": srt_time_to_ms(lines[time_idx]), "text": text})
     return subs
 
 # ==========================================
-# 2. ADMIN PANEL (?view=admin)
+# 2. AUTH & ADMIN
 # ==========================================
 if st.query_params.get("view") == "admin":
     st.title("🔐 Admin Panel")
@@ -263,121 +248,127 @@ if st.query_params.get("view") == "admin":
                 db = load_json(KEYS_FILE)
                 db[k] = {"duration_days": days, "activated_date": None, "status": "active"}
                 save_json(KEYS_FILE, db)
-                st.success(f"Key: {k}")
+                st.success(f"New Key: {k}")
         with c2:
-            if st.button("Clear All Active Sessions"):
+            k_kick = st.text_input("Kick Key")
+            if st.button("Kick"):
+                delete_session(k_kick)
+                st.success("Kicked")
+            if st.button("Reset ALL"):
                 save_json(ACTIVE_FILE, {})
-                st.success("All users logged out.")
-        
-        st.write("### Active Keys")
-        st.json(load_json(KEYS_FILE))
-        st.write("### Active Sessions (Device IDs)")
-        st.json(load_json(ACTIVE_FILE))
+                st.success("Reset Done")
+        st.write("Active Sessions")
+        st.json(load_active_sessions())
     st.stop()
 
-# ==========================================
-# 3. AUTH FLOW (RETRY MECHANISM)
-# ==========================================
+c1, c2, c3 = st.columns([1, 2, 1])
+with c2:
+    try:
+        st.image("logo.png", width=150)
+    except:
+        pass
+
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
 
-# ប្រើ key តែមួយគត់សម្រាប់ Cookie Manager កុំប្តូរ key
-cm = stx.CookieManager(key="main_cookie_manager")
+cm = stx.CookieManager(key="mgr")
 
-# --- HELPER FUNCTIONS ---
-def get_active_token(user_key):
-    active = load_active_sessions()
-    return active.get(user_key)
-
-def set_active_session(user_key):
-    new_token = str(uuid.uuid4())
-    active = load_active_sessions()
-    active[user_key] = new_token
-    save_active_sessions(active)
-    return new_token
-
-# --- 3.0: SMART COOKIE LOADER ---
-if "retry_count" not in st.session_state:
-    st.session_state.retry_count = 0
-
-cookie_key = cm.get("auth_key")
-cookie_token = cm.get("session_token")
-
-# Retry if cookie not found immediately
-if not cookie_key and st.session_state.retry_count < 2:
-    time.sleep(0.5)
-    st.session_state.retry_count += 1
-    st.rerun()
-
-if cookie_key:
-    st.session_state.retry_count = 0
-
-# --- 3.1: AUTO-LOGIN LOGIC ---
+# auth flag
 if "auth" not in st.session_state:
     st.session_state.auth = False
 
+# NEW: retry counter for cookies (fix remember fail on fast refresh)
+if "cookie_retry" not in st.session_state:
+    st.session_state.cookie_retry = 0
+
+# 🔐 Session cookies
+cookie_key = cm.get("auth_key")
+cookie_token = cm.get("session_token")
+
+# 🧠 Saved key for auto-fill (Remember key on Chrome PC & Android)
+saved_key_cookie = cm.get("saved_key")
+
+# 🩹 Fix: case refresh លឿន cookie មិនទាន់ load
+if (
+    cookie_key is None and
+    cookie_token is None and
+    saved_key_cookie is None and
+    st.session_state.cookie_retry < 2
+):
+    st.session_state.cookie_retry += 1
+    time.sleep(0.3)
+    st.rerun()
+
+# --- AUTO LOGIN BY SESSION COOKIE ---
 if not st.session_state.auth and cookie_key and cookie_token:
-    # 1. Check Key
     status, days = check_access_key(cookie_key)
-    # 2. Check Session Token
-    server_token = get_active_token(cookie_key)
-    
+    server_token = get_server_token(cookie_key)
     if status == "Valid" and cookie_token == server_token:
         st.session_state.auth = True
         st.session_state.ukey = cookie_key
         st.session_state.days = days
-    else:
-        # Cookie invalid or session replaced
-        pass
+        st.session_state.my_token = cookie_token
+        time.sleep(0.1)
+        st.rerun()
 
-# --- 3.2: LOGIN INTERFACE ---
+# --- LOGIN FORM ---
 if not st.session_state.auth:
-    if st.session_state.retry_count > 0 and st.session_state.retry_count < 2:
-        with st.spinner("🔄 Checking session..."):
-            time.sleep(1)
-            st.stop()
-
-    st.markdown("##### 🔐 Login Required")
-    
-    with st.form("login_form"):
-        key_input = st.text_input("🔑 Access Key", type="password")
+    st.markdown("### 🔐 Login Required")
+    with st.form("login"):
+        key_input = st.text_input(
+            "Access Key",
+            type="password",
+            value=saved_key_cookie or ""   # auto-fill from saved_key cookie
+        )
         remember = st.checkbox("Remember me", value=True)
-        submitted = st.form_submit_button("Login", type="primary")
-
-    if submitted:
+        btn = st.form_submit_button("Login", type="primary")
+    if btn:
         status, days = check_access_key(key_input)
-        
         if status != "Valid":
             st.error(status)
             st.stop()
+        if is_key_active(key_input):
+            st.error("⛔ Access Denied! Key Active Elsewhere")
+            st.stop()
 
-        # Create New Session (Kick other devices)
-        new_token = set_active_session(key_input)
-        
+        new_token = create_session(key_input)
         st.session_state.auth = True
         st.session_state.ukey = key_input
         st.session_state.days = days
-        st.session_state.retry_count = 0
-        
+        st.session_state.my_token = new_token
+
+        # session cookies (auth)
         if remember:
             exp = datetime.datetime.now() + datetime.timedelta(days=30)
-            cm.set("auth_key", key_input, expires_at=exp, key="set_k_final")
-            cm.set("session_token", new_token, expires_at=exp, key="set_t_final")
-        
-        st.success(f"Login Success! ({days} days left)")
-        time.sleep(0.5)
-        st.rerun()
-    
-    # Warning message if needed
-    if cookie_key and cookie_token:
-        server_token = get_active_token(cookie_key)
-        if server_token and server_token != cookie_token:
-             st.warning("⚠️ Session Expired: Key នេះត្រូវបាន Login នៅកន្លែងផ្សេង។")
+            cm.set("auth_key", key_input, expires_at=exp, key="sk")
+            cm.set("session_token", new_token, expires_at=exp, key="st")
+        else:
+            cm.delete("auth_key")
+            cm.delete("session_token")
 
+        # saved_key cookie (for auto-fill only, 365 days)
+        if remember:
+            exp_long = datetime.datetime.now() + datetime.timedelta(days=365)
+            cm.set("saved_key", key_input, expires_at=exp_long, key="rk")
+        else:
+            cm.delete("saved_key")
+
+        st.success("Success!")
+        st.rerun()
     st.stop()
 
+# --- CHECK SESSION STILL VALID ---
+if st.session_state.auth:
+    if get_server_token(st.session_state.ukey) != st.session_state.my_token:
+        st.error("🚨 Session Expired.")
+        st.session_state.clear()
+        cm.delete("auth_key")
+        cm.delete("session_token")
+        # NOTE: do NOT delete saved_key → keep key for auto-fill
+        time.sleep(1)
+        st.rerun()
 
 # ==========================================
-# 4. APP INTERFACE (Logged In)
+# 3. MAIN APP
 # ==========================================
 VOICES = {
     "Sreymom (Khmer)": "km-KH-SreymomNeural",
@@ -391,60 +382,51 @@ VOICES = {
 
 with st.sidebar:
     st.success(f"✅ Active: {st.session_state.days} Days")
-    st.caption(f"ID: {st.session_state.ukey[:6]}...")
-
     if st.button("Logout", type="primary"):
-        logout_key(st.session_state.ukey)
-        cm.delete("auth_key")
+        delete_session(st.session_state.ukey)
         st.session_state.clear()
+        cm.delete("auth_key")
+        cm.delete("session_token")
+        # ❗ មិនលុប saved_key ដើម្បីឱ្យ Access Key នៅតែ auto-fill
         st.rerun()
 
     st.divider()
-    st.subheader("⚙️ Global Settings")
-
-    if "g_voice" not in st.session_state:
-        st.session_state.g_voice = "Sreymom (Khmer)"
-    if "g_rate" not in st.session_state:
-        st.session_state.g_rate = 0
-    if "g_pitch" not in st.session_state:
-        st.session_state.g_pitch = 0
-
+    st.subheader("⚙️ Settings")
+    if "g_voice" not in st.session_state: st.session_state.g_voice = "Sreymom (Khmer)"
+    if "g_rate" not in st.session_state: st.session_state.g_rate = 0
+    if "g_pitch" not in st.session_state: st.session_state.g_pitch = 0
     v_sel = st.selectbox("Voice", list(VOICES.keys()), index=list(VOICES.keys()).index(st.session_state.g_voice))
     r_sel = st.slider("Speed", -50, 50, value=st.session_state.g_rate)
     p_sel = st.slider("Pitch", -50, 50, value=st.session_state.g_pitch)
     pad_sel = st.number_input("Padding (ms)", value=80)
-
     st.session_state.g_voice = v_sel
     st.session_state.g_rate = r_sel
     st.session_state.g_pitch = p_sel
-
+    
     st.divider()
-    st.subheader("💾 6 Presets")
-    preset_name_input = st.text_input("Name (Short)", placeholder="Ex: Boy")
-
+    st.subheader("💾 Presets (Save Here)")
+    preset_name_input = st.text_input("Name", placeholder="Ex: Boy")
     for i in range(1, 7):
         c1, c2 = st.columns([3, 1])
         saved_p = get_user_preset(st.session_state.ukey, i)
         btn_name = saved_p["name"] if saved_p else f"Slot {i}"
-
-        if c1.button(f"📂 {btn_name}", key=f"load_{i}", use_container_width=True):
-            if saved_p:
-                st.session_state.g_voice = saved_p["voice"]
-                st.session_state.g_rate = saved_p["rate"]
-                st.session_state.g_pitch = saved_p["pitch"]
+        with c1:
+            if st.button(f"📂 {btn_name}", key=f"l{i}", use_container_width=True):
+                if saved_p:
+                    st.session_state.g_voice = saved_p["voice"]
+                    st.session_state.g_rate = saved_p["rate"]
+                    st.session_state.g_pitch = saved_p["pitch"]
+                    st.rerun()
+        with c2:
+            if st.button(f"💾", key=f"s{i}", use_container_width=True): 
+                data = {"voice": v_sel, "rate": r_sel, "pitch": p_sel}
+                save_user_preset(st.session_state.ukey, i, data, preset_name_input)
+                st.toast(f"Saved Slot {i}!")
+                time.sleep(0.5)
                 st.rerun()
 
-        if c2.button("💾", key=f"save_{i}"):
-            data = {"voice": v_sel, "rate": r_sel, "pitch": p_sel}
-            save_user_preset(st.session_state.ukey, i, data, preset_name_input)
-            st.toast(f"Saved to Slot {i}!")
-            time.sleep(0.5)
-            st.rerun()
-
-# Removed Tab 3 (Gemini Translator) as requested
 tab1, tab2 = st.tabs(["📝 Text Mode", "🎬 SRT Multi-Speaker"])
 
-# --- TAB 1: TEXT ---
 with tab1:
     txt = st.text_area("Input Text...", height=150)
     if st.button("Generate Audio 🎵", type="primary"):
@@ -458,10 +440,10 @@ with tab1:
                     buf = io.BytesIO()
                     final.export(buf, format="mp3")
                     st.audio(buf)
+                    st.download_button("Download MP3", buf, "audio.mp3", "audio/mp3")
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    st.error(str(e))
 
-# --- TAB 2: SRT ---
 with tab2:
     srt_file = st.file_uploader("Upload SRT", type="srt", key="srt_up")
     if srt_file:
@@ -469,114 +451,151 @@ with tab2:
             content = srt_file.getvalue().decode("utf-8")
             st.session_state.srt_lines = parse_srt(content)
             st.session_state.last_srt = srt_file.name
-            st.session_state.line_settings = []
-            for _ in st.session_state.srt_lines:
-                st.session_state.line_settings.append({
-                    "voice": st.session_state.g_voice, "rate": st.session_state.g_rate, "pitch": st.session_state.g_pitch, "slot": None
-                })
+            st.session_state.line_settings = [
+                {
+                    "voice": st.session_state.g_voice,
+                    "rate": st.session_state.g_rate,
+                    "pitch": st.session_state.g_pitch,
+                    "slot": None
+                }
+                for _ in st.session_state.srt_lines
+            ]
         
-        # PRESET ALL
-        st.markdown("#### 🎭 SRT Default Preset")
-        preset_options = ["-- No Preset --"]
-        preset_map = {}
-        for i in range(1, 7):
-            pd = get_user_preset(st.session_state.ukey, i)
-            if pd:
-                name = f"Slot {i}: {pd.get('name', f'Slot {i}')}"
-                preset_options.append(name)
-                preset_map[name] = (i, pd)
+        st.markdown("#### 🎭 Apply Preset to All")
+        preset_opts = ["-- Select --"] + [
+            f"Slot {i}: {get_user_preset(st.session_state.ukey, i).get('name', f'Slot {i}')}"
+            for i in range(1,7) if get_user_preset(st.session_state.ukey, i)
+        ]
+        preset_map = {
+            f"Slot {i}: {get_user_preset(st.session_state.ukey, i).get('name', f'Slot {i}')}": i
+            for i in range(1,7) if get_user_preset(st.session_state.ukey, i)
+        }
         
-        srt_def = st.selectbox("Apply to ALL", preset_options, key="srt_def")
-        if st.button("Apply Preset to All"):
+        c_all_1, c_all_2 = st.columns([3, 1])
+        srt_def = c_all_1.selectbox("Choose Preset", preset_opts, label_visibility="collapsed")
+        if c_all_2.button("Apply All"):
             if srt_def in preset_map:
-                slot_id, _ = preset_map[srt_def]
+                sid = preset_map[srt_def]
                 for idx in range(len(st.session_state.srt_lines)):
-                    apply_preset_to_line(st.session_state.ukey, idx, slot_id)
-                st.success("Applied!")
+                    apply_preset_to_line_bulk(st.session_state.ukey, idx, sid)
                 st.rerun()
 
-        # EDITOR
-        with st.container(height=600):
-            for idx, sub in enumerate(st.session_state.srt_lines):
-                cur = st.session_state.line_settings[idx]
-                slot = cur.get("slot")
-                slot_class = f" slot-{slot}" if slot else ""
-                p_html = f"<span class='preset-tag'>{get_user_preset(st.session_state.ukey, slot)['name']}</span>" if slot else ""
-                
-                st.markdown(f"<div class='srt-box{slot_class}'><b>#{idx+1}</b> <small>{sub['start']}ms</small> {p_html}<br>{sub['text']}</div>", unsafe_allow_html=True)
-                
-                c_v, c_r, c_p, c_pr = st.columns([2, 1, 1, 4])
-                
-                new_v = c_v.selectbox("V", list(VOICES.keys()), index=list(VOICES.keys()).index(cur["voice"]), key=f"v_{idx}", label_visibility="collapsed")
-                new_r = c_r.number_input("R", -50, 50, value=cur["rate"], key=f"r_{idx}", label_visibility="collapsed")
-                new_p = c_p.number_input("P", -50, 50, value=cur["pitch"], key=f"p_{idx}", label_visibility="collapsed")
-                
-                st.session_state.line_settings[idx].update({"voice": new_v, "rate": new_r, "pitch": new_p, "slot": slot})
+        st.divider()
+        st.write("#### ✂️ Line Editor")
+        
+        for idx, sub in enumerate(st.session_state.srt_lines):
+            cur = st.session_state.line_settings[idx]
+            s = cur["slot"]
+            
+            st.markdown(
+                f"""<div class='srt-container' style='border-left: 5px solid {
+                    "#f97316" if s==1 else
+                    "#22c55e" if s==2 else
+                    "#3b82f6" if s==3 else
+                    "#e11d48" if s==4 else
+                    "#a855f7" if s==5 else
+                    "#facc15" if s==6 else
+                    "#64748b"
+                };'>""",
+                unsafe_allow_html=True
+            )
+            
+            p_name = get_user_preset(st.session_state.ukey, s)['name'] if s else ""
+            st.markdown(
+                f"""<div class='status-line'>
+                    <span><b>#{idx+1}</b> &nbsp; {sub['start']}ms</span>
+                    <span class='preset-badge'>{p_name}</span>
+                </div>""",
+                unsafe_allow_html=True
+            )
+            
+            new_text = st.text_area(
+                label=f"hidden_{idx}",
+                value=sub['text'], 
+                key=f"txt_{idx}", 
+                height=70, 
+                label_visibility="collapsed"
+            )
+            if new_text != st.session_state.srt_lines[idx]['text']:
+                st.session_state.srt_lines[idx]['text'] = new_text
 
-                with c_pr:
-                    cols = st.columns(6)
-                    for sid in range(1, 7):
-                        pd = get_user_preset(st.session_state.ukey, sid)
-                        if cols[sid-1].button(pd['name'][:4] if pd else "-", key=f"b_{idx}_{sid}", type="primary" if slot==sid else "secondary"):
-                            apply_preset_to_line(st.session_state.ukey, idx, sid)
-                            st.rerun()
+            c_voice, c_rate, c_pitch = st.columns([2, 1, 1])
+            
+            v = c_voice.selectbox(
+                "V",
+                list(VOICES.keys()),
+                index=list(VOICES.keys()).index(cur["voice"]),
+                key=f"v{idx}",
+                label_visibility="collapsed"
+            )
+            r = c_rate.number_input(
+                "R",
+                -50,
+                50,
+                value=cur["rate"],
+                key=f"r{idx}",
+                label_visibility="collapsed"
+            )
+            p = c_pitch.number_input(
+                "P",
+                -50,
+                50,
+                value=cur["pitch"],
+                key=f"p{idx}",
+                label_visibility="collapsed"
+            )
+            
+            st.session_state.line_settings[idx]["voice"] = v
+            st.session_state.line_settings[idx]["rate"] = r
+            st.session_state.line_settings[idx]["pitch"] = p
+            
+            st.markdown("<div style='margin-top:5px;'></div>", unsafe_allow_html=True)
+            
+            cols = st.columns(6)
+            for i in range(1, 7):
+                pd = get_user_preset(st.session_state.ukey, i)
+                lbl = pd['name'][:3] if pd else str(i)
+                kind = "primary" if s==i else "secondary"
+                
+                cols[i-1].button(
+                    lbl, 
+                    key=f"b{idx}{i}", 
+                    type=kind,
+                    on_click=apply_preset_to_line_callback,
+                    args=(st.session_state.ukey, idx, i)
+                )
 
-        # FULL AUDIO GENERATION LOGIC (COMPLETED)
+            st.markdown("</div>", unsafe_allow_html=True)
+
         if st.button("🚀 Generate Full Audio", type="primary"):
-             if not st.session_state.srt_lines:
-                 st.error("No lines to process")
-             else:
-                 progress_bar = st.progress(0)
-                 status_text = st.empty()
-                 
-                 full_audio = AudioSegment.silent(duration=0)
-                 current_time = 0
-                 
-                 # Loop Setup
-                 loop = asyncio.new_event_loop()
-                 asyncio.set_event_loop(loop)
-                 
-                 try:
-                     for i, sub in enumerate(st.session_state.srt_lines):
-                         status_text.text(f"Processing line {i+1}/{len(st.session_state.srt_lines)}...")
-                         
-                         # 1. Calculate Silence needed before this line
-                         start_time = sub["start"]
-                         silence_duration = start_time - current_time
-                         if silence_duration > 0:
-                             full_audio += AudioSegment.silent(duration=silence_duration)
-                             current_time += silence_duration
-                         
-                         # 2. Generate Audio for this line
-                         s = st.session_state.line_settings[i]
-                         temp_file = loop.run_until_complete(
-                             gen_edge(sub["text"], VOICES[s["voice"]], s["rate"], s["pitch"])
-                         )
-                         
-                         # 3. Process & Append
-                         # Note: Padding is handled by silence calculation usually, 
-                         # but we can normalize here.
-                         segment = AudioSegment.from_file(temp_file)
-                         segment = effects.normalize(segment)
-                         
-                         full_audio += segment
-                         current_time += len(segment)
-                         
-                         # Clean up temp
-                         try:
-                             os.remove(temp_file)
-                         except:
-                             pass
-                         
-                         progress_bar.progress((i + 1) / len(st.session_state.srt_lines))
-                     
-                     # Export
-                     status_text.text("Merging final audio...")
-                     buf = io.BytesIO()
-                     full_audio.export(buf, format="mp3")
-                     
-                     st.success("✅ Done!")
-                     st.audio(buf)
-                     
-                 except Exception as e:
-                     st.error(f"Failed: {e}")
+            progress = st.progress(0)
+            status = st.empty()
+            try:
+                last_end = st.session_state.srt_lines[-1]["start"] + 10000
+                final_mix = AudioSegment.silent(duration=last_end)
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                for i, sub in enumerate(st.session_state.srt_lines):
+                    status.text(f"Processing {i+1}/{len(st.session_state.srt_lines)}...")
+                    sett = st.session_state.line_settings[i]
+                    current_text = st.session_state.srt_lines[i]['text']
+                    if not current_text.strip():
+                        continue
+                    raw_path = loop.run_until_complete(
+                        gen_edge(current_text, VOICES[sett["voice"]], sett["rate"], sett["pitch"])
+                    )
+                    clip = AudioSegment.from_file(raw_path)
+                    final_mix = final_mix.overlay(clip, position=sub["start"])
+                    try:
+                        os.remove(raw_path)
+                    except:
+                        pass
+                    progress.progress((i+1)/len(st.session_state.srt_lines))
+                status.success("Done!")
+                buf = io.BytesIO()
+                final_mix.export(buf, format="mp3")
+                buf.seek(0)
+                st.audio(buf)
+                st.download_button("Download Conversation", buf, "conversation.mp3", "audio/mp3")
+            except Exception as e:
+                status.error(f"Error: {e}")
