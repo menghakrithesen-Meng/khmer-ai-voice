@@ -109,19 +109,29 @@ st.markdown("""
 # 1. HELPER FUNCTIONS
 # ==========================================
 def load_json(path):
-    if not os.path.exists(path): return {}
+    if not os.path.exists(path):
+        return {}
     try:
-        with open(path, "r", encoding="utf-8") as f: return json.load(f)
-    except: return {}
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return {}
 
 def save_json(path, data):
     try:
-        with open(path, "w", encoding="utf-8") as f: json.dump(data, f, indent=2, ensure_ascii=False)
-    except: pass
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except:
+        pass
 
-def load_active_sessions(): return load_json(ACTIVE_FILE)
-def get_server_token(user_key): return load_active_sessions().get(user_key)
-def is_key_active(user_key): return user_key in load_active_sessions()
+def load_active_sessions():
+    return load_json(ACTIVE_FILE)
+
+def get_server_token(user_key):
+    return load_active_sessions().get(user_key)
+
+def is_key_active(user_key):
+    return user_key in load_active_sessions()
 
 def create_session(user_key):
     new_token = str(uuid.uuid4())
@@ -138,21 +148,25 @@ def delete_session(user_key):
 
 def check_access_key(user_key):
     keys_db = load_json(KEYS_FILE)
-    if user_key not in keys_db: return "Invalid Key", 0
+    if user_key not in keys_db:
+        return "Invalid Key", 0
     k_data = keys_db[user_key]
-    if k_data.get("status") != "active": return "Key Disabled", 0
+    if k_data.get("status") != "active":
+        return "Key Disabled", 0
     if not k_data.get("activated_date"):
         k_data["activated_date"] = str(datetime.date.today())
         save_json(KEYS_FILE, keys_db)
     start = datetime.date.fromisoformat(k_data["activated_date"])
     exp = start + datetime.timedelta(days=k_data["duration_days"])
     left = (exp - datetime.date.today()).days
-    if left < 0: return "Expired", 0
+    if left < 0:
+        return "Expired", 0
     return "Valid", left
 
 def save_user_preset(user_key, slot, data, name):
     db = load_json(PRESETS_FILE)
-    if user_key not in db: db[user_key] = {}
+    if user_key not in db:
+        db[user_key] = {}
     data["name"] = name if name else f"{slot}"
     db[user_key][str(slot)] = data
     save_json(PRESETS_FILE, db)
@@ -164,7 +178,8 @@ def get_user_preset(user_key, slot):
 # 🔥 Callback function to update state BEFORE render (for SRT presets)
 def apply_preset_to_line_callback(user_key, line_index, slot_id):
     pd = get_user_preset(user_key, slot_id)
-    if not pd: return
+    if not pd:
+        return
     
     st.session_state.line_settings[line_index]["voice"] = pd["voice"]
     st.session_state.line_settings[line_index]["rate"] = pd["rate"]
@@ -178,7 +193,8 @@ def apply_preset_to_line_callback(user_key, line_index, slot_id):
 # non-callback version for bulk apply
 def apply_preset_to_line_bulk(user_key, line_index, slot_id):
     pd = get_user_preset(user_key, slot_id)
-    if not pd: return
+    if not pd:
+        return
     st.session_state.line_settings[line_index] = {
         "voice": pd["voice"],
         "rate": pd["rate"],
@@ -194,7 +210,8 @@ async def gen_edge(text, voice, rate, pitch):
             file_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3").name
             communicate = edge_tts.Communicate(text, voice, rate=rate_str, pitch=pitch_str)
             await communicate.save(file_path)
-            if os.path.getsize(file_path) > 0: return file_path
+            if os.path.getsize(file_path) > 0:
+                return file_path
         except Exception as e:
             print(f"Retry {attempt+1}: {e}")
             time.sleep(1)
@@ -205,14 +222,16 @@ def process_audio(file_path, pad_ms):
         seg = AudioSegment.from_file(file_path)
         pad = AudioSegment.silent(duration=pad_ms)
         return pad + effects.normalize(seg) + pad
-    except: return AudioSegment.from_file(file_path)
+    except:
+        return AudioSegment.from_file(file_path)
 
 def srt_time_to_ms(time_str):
     try:
         start, _ = time_str.split(" --> ")
         h, m, s = start.replace(",", ".").split(":")
         return int(float(h)*3600000 + float(m)*60000 + float(s)*1000)
-    except: return 0
+    except:
+        return 0
 
 def parse_srt(content):
     content = content.replace("\r\n", "\n").replace("\r", "\n")
@@ -220,7 +239,8 @@ def parse_srt(content):
     blocks = content.strip().split("\n\n")
     for b in blocks:
         lines = [l.strip() for l in b.split("\n") if l.strip()]
-        if len(lines) < 2: continue
+        if len(lines) < 2:
+            continue
         time_idx = -1
         for i, l in enumerate(lines):
             if "-->" in l:
@@ -276,27 +296,27 @@ cm = stx.CookieManager(key="mgr")
 if "auth" not in st.session_state:
     st.session_state.auth = False
 
-# NEW: retry counter for cookies (fix remember fail on fast refresh)
+# retry counter for cookie loading
 if "cookie_retry" not in st.session_state:
     st.session_state.cookie_retry = 0
 
-# 🔐 Session cookies
-cookie_key = cm.get("auth_key")
-cookie_token = cm.get("session_token")
+# 🎯 LOAD ALL COOKIES (ជំនួស get ជាបន្ទាប់បន្សំ)
+raw_cookies = cm.get_all()
 
-# 🧠 Saved key for auto-fill (Remember key on Chrome PC & Android)
-saved_key_cookie = cm.get("saved_key")
-
-# 🩹 Fix: case refresh លឿន cookie មិនទាន់ load
-if (
-    cookie_key is None and
-    cookie_token is None and
-    saved_key_cookie is None and
-    st.session_state.cookie_retry < 2
-):
+# បើ CookieManager មិនទាន់ផ្ញើ cookies មក (run លើកដំបូង)
+if raw_cookies is None and st.session_state.cookie_retry < 5:
     st.session_state.cookie_retry += 1
-    time.sleep(0.3)
+    time.sleep(0.3)  # delay តិចៗ
     st.rerun()
+
+# បន្ទាប់ពី retry ពេញហើយ raw_cookies នៅ None → ដាក់ជា {} ទៅ
+if raw_cookies is None:
+    raw_cookies = {}
+
+# យកតម្លៃពី dict (auth_key / session_token / saved_key)
+cookie_key = raw_cookies.get("auth_key")
+cookie_token = raw_cookies.get("session_token")
+saved_key_cookie = raw_cookies.get("saved_key")
 
 # --- AUTO LOGIN BY SESSION COOKIE ---
 if not st.session_state.auth and cookie_key and cookie_token:
@@ -392,9 +412,12 @@ with st.sidebar:
 
     st.divider()
     st.subheader("⚙️ Settings")
-    if "g_voice" not in st.session_state: st.session_state.g_voice = "Sreymom (Khmer)"
-    if "g_rate" not in st.session_state: st.session_state.g_rate = 0
-    if "g_pitch" not in st.session_state: st.session_state.g_pitch = 0
+    if "g_voice" not in st.session_state:
+        st.session_state.g_voice = "Sreymom (Khmer)"
+    if "g_rate" not in st.session_state:
+        st.session_state.g_rate = 0
+    if "g_pitch" not in st.session_state:
+        st.session_state.g_pitch = 0
     v_sel = st.selectbox("Voice", list(VOICES.keys()), index=list(VOICES.keys()).index(st.session_state.g_voice))
     r_sel = st.slider("Speed", -50, 50, value=st.session_state.g_rate)
     p_sel = st.slider("Pitch", -50, 50, value=st.session_state.g_pitch)
