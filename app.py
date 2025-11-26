@@ -23,87 +23,93 @@ try:
 except:
     img_icon = "🎙️"
 
+# ============= Button Size Control =============
+# x = font-size (px)
+# y = button height (px)
+x = 11   # ទំហំអក្សរ button
+y = 35   # កម្ពស់ button
+
 st.set_page_config(page_title="Khmer AI Voice Pro", page_icon=img_icon, layout="wide")
 
 KEYS_FILE = "web_keys.json"
 PRESETS_FILE = "user_presets.json"
 ACTIVE_FILE = "active_sessions.json"
 
-st.markdown("""
+st.markdown(f"""
 <style>
     /* Global App Style */
-    .stApp { background: linear-gradient(to right, #0f172a, #1e293b); color: white; }
-    section[data-testid="stSidebar"] { background-color: #111827; border-right: 1px solid #374151; }
+    .stApp {{ background: linear-gradient(to right, #0f172a, #1e293b); color: white; }}
+    section[data-testid="stSidebar"] {{ background-color: #111827; border-right: 1px solid #374151; }}
     
-    /* Input Cleanups */
-    button[data-testid="stNumberInputStepDown"], button[data-testid="stNumberInputStepUp"] { display: none; }
-    div[data-testid="stNumberInput"] input { text-align: center; }
+    /* Hide Spinners */
+    button[data-testid="stNumberInputStepDown"], button[data-testid="stNumberInputStepUp"] {{ display: none; }}
+    div[data-testid="stNumberInput"] input {{ text-align: center; }}
     
-    /* Sidebar Buttons */
-    [data-testid="stSidebar"] div[data-testid="column"] button { 
-        padding: 0px 2px !important; 
-        font-size: 11px !important; 
-        min-height: 32px !important; 
-        width: 100%; 
-        white-space: nowrap; 
-        overflow: hidden; 
-        text-overflow: ellipsis; 
-    }
-
-    /* Line Editor Buttons (Compact) */
-    .stTabs div[data-testid="column"] button {
-        padding: 0px !important;
-        font-size: 12px !important;
+    /* --- MOBILE PRESET ROW FIX (FORCE HORIZONTAL) --- */
+    div[data-testid="column"] {{
+        min-width: 0px !important;
+        flex: 1 1 0% !important;
+        padding: 0px 1px !important;
+    }}
+    
+    /* Button Style (controlled by x, y) */
+    div[data-testid="column"] button {{ 
+        padding: 0px !important; 
+        font-size: {x}px !important; 
         font-weight: bold !important;
-        min-height: 35px !important;
-        width: 100%;
+        min-height: {y}px !important; 
+        width: 100%; 
+        white-space: nowrap;
+        overflow: hidden;
         border-radius: 4px;
-    }
+        margin: 0px !important;
+    }}
 
     /* Active Button Color */
-    div[data-testid="column"] button[kind="primary"] { 
+    div[data-testid="column"] button[kind="primary"] {{ 
         border: 1px solid #ef4444 !important; 
         background-color: #ef4444 !important; 
         color: white !important; 
-    }
+    }}
     
-    /* FORCE TEXT AREA VISIBILITY (Dark Mode) */
-    .stTextArea textarea {
+    /* --- TEXT AREA (Dark Mode & Visible) --- */
+    .stTextArea textarea {{
         background-color: #0f172a !important;
         color: #ffffff !important;
         font-size: 16px !important;
         border: 1px solid #475569 !important;
         border-radius: 6px !important;
-    }
+    }}
 
     /* SRT Container Card */
-    .srt-container {
+    .srt-container {{
         background-color: #1e293b;
-        padding: 8px;
+        padding: 10px;
         border-radius: 8px;
         border: 1px solid #334155;
-        margin-bottom: 12px;
-    }
+        margin-bottom: 15px;
+    }}
     
-    .status-line {
+    .status-line {{
         font-size: 12px;
         color: #94a3b8;
         margin-bottom: 5px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-    }
+    }}
     
-    .preset-badge {
+    .preset-badge {{
         background: #334155;
         color: #cbd5e1;
         padding: 2px 6px;
         border-radius: 4px;
         font-size: 10px;
         border: 1px solid #475569;
-    }
+    }}
 </style>
 """, unsafe_allow_html=True)
+
 
 # ==========================================
 # 1. HELPER FUNCTIONS
@@ -437,3 +443,4 @@ with tab2:
                 status.success("Done!"); buf = io.BytesIO(); final_mix.export(buf, format="mp3"); buf.seek(0)
                 st.audio(buf); st.download_button("Download Conversation", buf, "conversation.mp3", "audio/mp3")
             except Exception as e: status.error(f"Error: {e}")
+
