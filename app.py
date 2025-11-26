@@ -347,9 +347,6 @@ VOICES = {
     "Piseth (Khmer)": "km-KH-PisethNeural",
     "Emma (EN Multi)": "en-US-EmmaMultilingualNeural",
     "William (EN AU Multi)": "en-AU-WilliamMultilingualNeural",
-    "Jenny (EN Multi)": "en-US-JennyMultilingualNeural",
-    "Guy (EN Multi)": "en-US-GuyMultilingualNeural",
-    "Xiaoxiao (Chinese)": "zh-CN-XiaoxiaoNeural",
 }
 
 with st.sidebar:
@@ -577,6 +574,7 @@ with tab2:
                     st.download_button("Download Conversation", buf, "conversation.mp3", "audio/mp3")
                 except Exception as e:
                     status.error(f"Error: {e}")
+
 
 
 
