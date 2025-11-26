@@ -472,50 +472,97 @@ with tab2:
                         apply_preset_to_line_bulk(st.session_state.ukey, idx, sid)
                     st.rerun()
 
-            st.divider()
+                        st.divider()
             st.write("#### ✂️ Line Editor")
 
-            # 🔳 Frame ធំមាន scroll ខាងក្នុង
-            st.markdown(
-                """
-                <div style="
-                    border:1px solid #334155;
-                    border-radius:10px;
-                    padding:12px;
-                    max-height:500px;
-                    overflow-y:auto;
-                ">
-                """,
-                unsafe_allow_html=True,
-            )
+            # 🔳 FRAME មាន scroll (max-height 500px)
+            with st.container(height=500, border=True):
 
-            for idx, sub in enumerate(st.session_state.srt_lines):
-                cur = st.session_state.line_settings[idx]
-                s = cur["slot"]
+                for idx in range(len(st.session_state.srt_lines)):
+                    # always pull from session_state
+                    sub = st.session_state.srt_lines[idx]
+                    cur = st.session_state.line_settings[idx]
+                    s   = cur["slot"]
 
-                border_color = (
-                    "#f97316" if s == 1 else
-                    "#22c55e" if s == 2 else
-                    "#3b82f6" if s == 3 else
-                    "#e11d48" if s == 4 else
-                    "#a855f7" if s == 5 else
-                    "#facc15" if s == 6 else
-                    "#64748b"
-                )
+                    border_color = (
+                        "#f97316" if s == 1 else
+                        "#22c55e" if s == 2 else
+                        "#3b82f6" if s == 3 else
+                        "#e11d48" if s == 4 else
+                        "#a855f7" if s == 5 else
+                        "#facc15" if s == 6 else
+                        "#64748b"
+                    )
 
-                # Card មួយសម្រាប់លីង
-                st.markdown(
-                    f"<div class='srt-container' style='border-left: 5px solid {border_color};'>",
-                    unsafe_allow_html=True
-                )
+                    st.markdown(
+                        f"<div class='srt-container' style='border-left: 5px solid {border_color};'>",
+                        unsafe_allow_html=True
+                    )
 
-                p_name = get_user_preset(st.session_state.ukey, s)['name'] if s else ""
-                st.markdown(
-                    f"""<div class='status-line'>
+                    # header small line
+                    p_name = get_user_preset(st.session_state.ukey, s)['name'] if s else ""
+                    st.markdown(
+                        f"""
+                        <div class='status-line'>
                             <span><b>#{idx+1}</b> &nbsp; {sub['start']}ms</span>
                             <span class='preset-badge'>{p_name}</span>
-                        </div>""",
-                    unsafe_allow_html=True
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+                    # 🔥 LINE TEXT EDIT (នេះហើយដែលអូនមិនឃើញ)
+                    # value ដើមជា text ក្នុង srt_lines; បើអូនកែហើយ កាន់តាម session_state["txt_idx"]
+                    default_text = sub.get("text", "")
+                    if f"txt_{idx}" in st.session_state:
+                        default_text = st.session_state[f"txt_{idx}"]
+
+                    new_text = st.text_area(
+                        label=f"Line {idx+1} Text",
+                        value=default_text,
+                        key=f"txt_{idx}",
+                        height=80,
+                    )
+
+                    # update text ទុកក្នុង session
+                    st.session_state.srt_lines[idx]["text"] = new_text
+
+                    # 🎚️ R / P as number inputs
+                    c_rate, c_pitch = st.columns(2)
+                    r = c_rate.number_input(
+                        "R",
+                        -50, 50,
+                        value=int(cur["rate"]),
+                        key=f"r{idx}"
+                    )
+                    p = c_pitch.number_input(
+                        "P",
+                        -50, 50,
+                        value=int(cur["pitch"]),
+                        key=f"p{idx}"
+                    )
+                    st.session_state.line_settings[idx]["rate"] = r
+                    st.session_state.line_settings[idx]["pitch"] = p
+
+                    st.markdown("<div style='margin-top:5px;'></div>", unsafe_allow_html=True)
+
+                    # 🎭 Preset buttons
+                    cols = st.columns(6)
+                    for i in range(1, 7):
+                        pd = get_user_preset(st.session_state.ukey, i)
+                        lbl = pd['name'][:5] if pd else str(i)
+                        kind = "primary" if s == i else "secondary"
+
+                        cols[i-1].button(
+                            lbl,
+                            key=f"b{idx}{i}",
+                            type=kind,
+                            on_click=apply_preset_to_line_callback,
+                            args=(st.session_state.ukey, idx, i),
+                        )
+
+                    st.markdown("</div>", unsafe_allow_html=True)  # close .srt-container
+
                 )
 
                 # ✏️ LINE TEXT EDIT (TextArea)
@@ -607,5 +654,6 @@ with tab2:
                     st.download_button("Download Conversation", buf, "conversation.mp3", "audio/mp3")
                 except Exception as e:
                     status.error(f"Error: {e}")
+
 
 
