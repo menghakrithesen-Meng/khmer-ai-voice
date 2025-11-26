@@ -432,6 +432,7 @@ with tab2:
         if srt_file.size > 150 * 1024:
             st.error("⚠️ File too large! Max limit is 150KB.")
         else:
+            # parse once
             if "srt_lines" not in st.session_state or st.session_state.get("last_srt") != srt_file.name:
                 content = srt_file.getvalue().decode("utf-8")
                 st.session_state.srt_lines = parse_srt(content)
@@ -446,7 +447,7 @@ with tab2:
                     for _ in st.session_state.srt_lines
                 ]
 
-            # 🔥 GENERATE BUTTON ON TOP
+            # 🔺 Generate button នៅលើ
             gen_clicked = st.button("🚀 Generate Full Audio", type="primary")
 
             st.markdown("#### 🎭 Apply Preset to All")
@@ -461,7 +462,7 @@ with tab2:
                 for i in range(1, 7)
                 if get_user_preset(st.session_state.ukey, i)
             }
-            
+
             c_all_1, c_all_2 = st.columns([3, 1])
             srt_def = c_all_1.selectbox("Choose Preset", preset_opts, label_visibility="collapsed")
             if c_all_2.button("Apply All"):
@@ -474,98 +475,116 @@ with tab2:
             st.divider()
             st.write("#### ✂️ Line Editor")
 
-            # 🔥 FRAME WITH SCROLL (NO BORDER LINE ON TOP)
-            with st.container(height=500):
-                for idx, sub in enumerate(st.session_state.srt_lines):
-                    cur = st.session_state.line_settings[idx]
-                    s = cur["slot"]
-                    
-                    border_color = (
-                        "#f97316" if s == 1 else
-                        "#22c55e" if s == 2 else
-                        "#3b82f6" if s == 3 else
-                        "#e11d48" if s == 4 else
-                        "#a855f7" if s == 5 else
-                        "#facc15" if s == 6 else
-                        "#64748b"
-                    )
-                    
-                    st.markdown(
-                        f"<div class='srt-container' style='border-left: 5px solid {border_color};'>",
-                        unsafe_allow_html=True
-                    )
-                    
-                    p_name = get_user_preset(st.session_state.ukey, s)['name'] if s else ""
-                    st.markdown(
-                        f"""<div class='status-line'>
+            # 🔳 Frame ធំមាន scroll ខាងក្នុង
+            st.markdown(
+                """
+                <div style="
+                    border:1px solid #334155;
+                    border-radius:10px;
+                    padding:12px;
+                    max-height:500px;
+                    overflow-y:auto;
+                ">
+                """,
+                unsafe_allow_html=True,
+            )
+
+            for idx, sub in enumerate(st.session_state.srt_lines):
+                cur = st.session_state.line_settings[idx]
+                s = cur["slot"]
+
+                border_color = (
+                    "#f97316" if s == 1 else
+                    "#22c55e" if s == 2 else
+                    "#3b82f6" if s == 3 else
+                    "#e11d48" if s == 4 else
+                    "#a855f7" if s == 5 else
+                    "#facc15" if s == 6 else
+                    "#64748b"
+                )
+
+                # Card មួយសម្រាប់លីង
+                st.markdown(
+                    f"<div class='srt-container' style='border-left: 5px solid {border_color};'>",
+                    unsafe_allow_html=True
+                )
+
+                p_name = get_user_preset(st.session_state.ukey, s)['name'] if s else ""
+                st.markdown(
+                    f"""<div class='status-line'>
                             <span><b>#{idx+1}</b> &nbsp; {sub['start']}ms</span>
                             <span class='preset-badge'>{p_name}</span>
                         </div>""",
-                        unsafe_allow_html=True
-                    )
-                    
-                    new_text = st.text_area(
-                        label=f"hidden_{idx}",
-                        value=sub['text'],
-                        key=f"txt_{idx}",
-                        height=70,
-                        label_visibility="collapsed"
-                    )
-                    if new_text != st.session_state.srt_lines[idx]['text']:
-                        st.session_state.srt_lines[idx]['text'] = new_text
+                    unsafe_allow_html=True
+                )
 
-                    # 🔄 Only Rate & Pitch in each line (Voice via preset)
-                    c_rate, c_pitch = st.columns(2)
-                    r = c_rate.number_input(
-                        "R",
-                        -50,
-                        50,
-                        value=cur["rate"],
-                        key=f"r{idx}",
-                        label_visibility="collapsed"
-                    )
-                    p = c_pitch.number_input(
-                        "P",
-                        -50,
-                        50,
-                        value=cur["pitch"],
-                        key=f"p{idx}",
-                        label_visibility="collapsed"
-                    )
-                    
-                    st.session_state.line_settings[idx]["rate"] = r
-                    st.session_state.line_settings[idx]["pitch"] = p
-                    
-                    st.markdown("<div style='margin-top:5px;'></div>", unsafe_allow_html=True)
-                    
-                    # 🔥 TIGHT PRESET BUTTONS (0 GAP)
-                    cols = st.columns(6)
-                    for i in range(1, 7):
-                        pd = get_user_preset(st.session_state.ukey, i)
-                        lbl = pd['name'][:5] if pd else str(i)
-                        kind = "primary" if s == i else "secondary"
-                        
-                        cols[i-1].button(
-                            lbl,
-                            key=f"b{idx}{i}",
-                            type=kind,
-                            on_click=apply_preset_to_line_callback,
-                            args=(st.session_state.ukey, idx, i)
-                        )
+                # ✏️ LINE TEXT EDIT (TextArea)
+                new_text = st.text_area(
+                    label=f"line_text_{idx}",
+                    value=sub['text'],
+                    key=f"txt_{idx}",
+                    height=80,
+                    label_visibility="collapsed",
+                )
+                if new_text != st.session_state.srt_lines[idx]['text']:
+                    st.session_state.srt_lines[idx]['text'] = new_text
 
-                    st.markdown("</div>", unsafe_allow_html=True)
+                # 🎚️ Rate / Pitch (NO Voice select)
+                c_rate, c_pitch = st.columns(2)
+                r = c_rate.number_input(
+                    "R",
+                    -50,
+                    50,
+                    value=cur["rate"],
+                    key=f"r{idx}",
+                    label_visibility="collapsed",
+                )
+                p = c_pitch.number_input(
+                    "P",
+                    -50,
+                    50,
+                    value=cur["pitch"],
+                    key=f"p{idx}",
+                    label_visibility="collapsed",
+                )
 
-            # 🎧 GENERATE FULL AUDIO (logic)
+                st.session_state.line_settings[idx]["rate"] = r
+                st.session_state.line_settings[idx]["pitch"] = p
+
+                st.markdown("<div style='margin-top:5px;'></div>", unsafe_allow_html=True)
+
+                # 🎭 Preset buttons ក្នុងលីង
+                cols = st.columns(6)
+                for i in range(1, 7):
+                    pd = get_user_preset(st.session_state.ukey, i)
+                    lbl = pd['name'][:5] if pd else str(i)
+                    kind = "primary" if s == i else "secondary"
+
+                    cols[i-1].button(
+                        lbl,
+                        key=f"b{idx}{i}",
+                        type=kind,
+                        on_click=apply_preset_to_line_callback,
+                        args=(st.session_state.ukey, idx, i),
+                    )
+
+                st.markdown("</div>", unsafe_allow_html=True)  # close .srt-container
+
+            # close outer frame
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            # 🎧 GENERATE FULL AUDIO
             if gen_clicked:
-                progress = st.progress(0)
                 status = st.empty()
                 try:
                     last_end = st.session_state.srt_lines[-1]["start"] + 10000
                     final_mix = AudioSegment.silent(duration=last_end)
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
+
+                    total = len(st.session_state.srt_lines)
                     for i, sub in enumerate(st.session_state.srt_lines):
-                        status.text(f"Processing {i+1}/{len(st.session_state.srt_lines)}...")
+                        status.text(f"Processing {i+1}/{total}...")
                         sett = st.session_state.line_settings[i]
                         current_text = st.session_state.srt_lines[i]['text']
                         if not current_text.strip():
@@ -579,7 +598,7 @@ with tab2:
                             os.remove(raw_path)
                         except:
                             pass
-                        progress.progress((i + 1) / len(st.session_state.srt_lines))
+
                     status.success("Done!")
                     buf = io.BytesIO()
                     final_mix.export(buf, format="mp3")
@@ -588,3 +607,5 @@ with tab2:
                     st.download_button("Download Conversation", buf, "conversation.mp3", "audio/mp3")
                 except Exception as e:
                     status.error(f"Error: {e}")
+
+
