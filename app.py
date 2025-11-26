@@ -18,16 +18,17 @@ from PIL import Image
 # ==========================================
 # 0. CONFIG & SETUP
 # ==========================================
+
+# 🧷 Button Size Control (កំណត់ x / y នៅទីនេះ)
+# x = font-size (px)
+# y = button height (px)
+x = 11   # ទំហំអក្សរ button (លើ preset buttons)
+y = 35   # កម្ពស់ button
+
 try:
     img_icon = Image.open("logo.png")
 except:
     img_icon = "🎙️"
-
-# ============= Button Size Control =============
-# x = font-size (px)
-# y = button height (px)
-x = 11   # ទំហំអក្សរ button
-y = 35   # កម្ពស់ button
 
 st.set_page_config(page_title="Khmer AI Voice Pro", page_icon=img_icon, layout="wide")
 
@@ -109,7 +110,6 @@ st.markdown(f"""
     }}
 </style>
 """, unsafe_allow_html=True)
-
 
 # ==========================================
 # 1. HELPER FUNCTIONS
@@ -443,4 +443,5 @@ with tab2:
                 status.success("Done!"); buf = io.BytesIO(); final_mix.export(buf, format="mp3"); buf.seek(0)
                 st.audio(buf); st.download_button("Download Conversation", buf, "conversation.mp3", "audio/mp3")
             except Exception as e: status.error(f"Error: {e}")
+
 
