@@ -524,6 +524,7 @@ with tab1:
 # ==========================================
 with tab2:
     srt_file = st.file_uploader("Upload SRT", type="srt", key="srt_up")
+    st.caption("📁 Limit 150KB per file • SRT only")
     
     if srt_file is not None:
         if srt_file.size > 150 * 1024:
@@ -691,4 +692,5 @@ with tab2:
 
 # anchor bottom page
 st.markdown("<div id='page_bottom'></div>", unsafe_allow_html=True)
+
 
