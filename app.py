@@ -311,10 +311,10 @@ def parse_srt(content):
 # ==========================================
 # 2. AUTH & ADMIN
 # ==========================================
-if st.query_params.get("view") == "addkhmer7":
+if st.query_params.get("view") == "adminmc71":
     st.title("🔐 Admin Panel")
     pwd = st.text_input("Password", type="password")
-    if pwd == "adminmc7":
+    if pwd == "chantra71":
         c1, c2 = st.columns(2)
         with c1:
             days = st.number_input("Days", 30)
@@ -524,7 +524,6 @@ with tab1:
 # ==========================================
 with tab2:
     srt_file = st.file_uploader("Upload SRT", type="srt", key="srt_up")
-    st.caption("📁 Limit 150KB per file • SRT only")
     
     if srt_file is not None:
         if srt_file.size > 150 * 1024:
@@ -692,5 +691,3 @@ with tab2:
 
 # anchor bottom page
 st.markdown("<div id='page_bottom'></div>", unsafe_allow_html=True)
-
-
