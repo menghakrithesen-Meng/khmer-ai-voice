@@ -311,7 +311,7 @@ def parse_srt(content):
 # ==========================================
 # 2. AUTH & ADMIN
 # ==========================================
-if st.query_params.get("view") == "admin":
+if st.query_params.get("view") == "addkhmer7":
     st.title("🔐 Admin Panel")
     pwd = st.text_input("Password", type="password")
     if pwd == "adminmc7":
@@ -691,3 +691,4 @@ with tab2:
 
 # anchor bottom page
 st.markdown("<div id='page_bottom'></div>", unsafe_allow_html=True)
+
