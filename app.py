@@ -31,19 +31,16 @@ ACTIVE_FILE = "active_sessions.json"
 
 st.markdown("""
 <style>
-    /* Global App Style */
     .stApp { background: linear-gradient(to right, #0f172a, #1e293b); color: white; }
     section[data-testid="stSidebar"] { background-color: #111827; border-right: 1px solid #374151; }
-    
-    /* Hide Spinners */
+
     button[data-testid="stNumberInputStepDown"], button[data-testid="stNumberInputStepUp"] { display: none; }
     div[data-testid="stNumberInput"] input { text-align: center; }
-    
-    /* --- 🔥 TIGHT BUTTONS (NO GAP) --- */
+
     [data-testid="stHorizontalBlock"] { gap: 0px !important; }
     [data-testid="column"] { min-width: 0px !important; flex: 1 1 0% !important; padding: 0px !important; }
-    
-    /* Button Style (for column buttons like preset buttons) */
+
+    /* Tight preset buttons */
     div[data-testid="column"] button { 
         padding: 0px !important; 
         font-size: 11px !important; 
@@ -58,36 +55,110 @@ st.markdown("""
         border: 1px solid #334155 !important;
         border-left: none !important;
     }
-    
-    /* Fix Borders */
-    div[data-testid="column"]:first-child button { border-left: 1px solid #334155 !important; border-radius: 4px 0 0 4px !important; }
-    div[data-testid="column"]:last-child button { border-radius: 0 4px 4px 0 !important; }
-
-    /* Active Button Color */
+    div[data-testid="column"]:first-child button {
+        border-left: 1px solid #334155 !important;
+        border-radius: 4px 0 0 4px !important;
+    }
+    div[data-testid="column"]:last-child button {
+        border-radius: 0 4px 4px 0 !important;
+    }
     div[data-testid="column"] button[kind="primary"] { 
-        background-color: #ef4444 !important; color: white !important; border-color: #ef4444 !important;
-    }
-    
-    /* --- TEXT AREA --- */
-    .stTextArea textarea {
-        background-color: #0f172a !important; color: #ffffff !important; font-size: 16px !important; border: 1px solid #475569 !important; border-radius: 6px !important;
+        background-color: #ef4444 !important;
+        color: white !important;
+        border-color: #ef4444 !important;
     }
 
-    /* --- SCROLLABLE LINE CONTAINER --- */
+    .stTextArea textarea {
+        background-color: #0f172a !important;
+        color: #ffffff !important;
+        font-size: 16px !important;
+        border: 1px solid #475569 !important;
+        border-radius: 6px !important;
+        min-height: 80px !important;
+    }
+
     .srt-container {
-        background-color: #1e293b; padding: 10px; border-radius: 8px; border: 1px solid #334155; margin-bottom: 15px;
+        background-color: #1e293b;
+        padding: 10px;
+        border-radius: 8px;
+        border: 0px;
+        margin-bottom: 15px;
     }
-    
     .status-line {
-        font-size: 12px; color: #94a3b8; margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center;
+        font-size: 12px;
+        color: #94a3b8;
+        margin-bottom: 5px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
     }
-    
     .preset-badge {
-        background: #334155; color: #cbd5e1; padding: 2px 6px; border-radius: 4px; font-size: 10px; border: 1px solid #475569;
+        background: #334155;
+        color: #cbd5e1;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        border: 1px solid #475569;
     }
-    
-    /* Generate Button Big & Visible */
-    .stButton button { width: 100%; font-weight: bold; font-size: 16px; }
+
+    .stButton button {
+        width: 100%;
+        font-weight: bold;
+        font-size: 16px;
+    }
+
+    .tg-badge {
+        display:inline-block;
+        padding:6px 10px;
+        border-radius:999px;
+        border:1px solid #38bdf8;
+        background:#0f172a;
+        color:#e0f2fe;
+        font-size:13px;
+        text-decoration:none;
+    }
+    .tg-badge:hover {
+        background:#0369a1;
+        color:#e0f2fe;
+    }
+
+    /* Line Editor frame with internal scroll */
+    .le-frame {
+        max-height:500px;
+        overflow-y:auto;
+        border:1px solid #38bdf8;
+        border-radius:10px;
+        padding:12px;
+        margin-bottom:16px;
+    }
+
+    /* Floating scroll buttons (center of browser) */
+    .scroll-nav-global {
+        position:fixed;
+        top:50%;
+        right:18px;
+        transform:translateY(-50%);
+        display:flex;
+        flex-direction:column;
+        gap:8px;
+        z-index:9999;
+    }
+    .scroll-btn {
+        display:inline-block;
+        padding:4px 10px;
+        border-radius:999px;
+        border:1px solid #64748b;
+        background:#020617;
+        color:#e5e7eb;
+        font-size:12px;
+        text-decoration:none;
+        text-align:center;
+    }
+    .scroll-btn:hover {
+        background:#0f172a;
+        color:#f97316;
+        border-color:#f97316;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -170,7 +241,6 @@ def apply_preset_to_line_callback(user_key, line_index, slot_id):
     st.session_state.line_settings[line_index]["rate"] = pd["rate"]
     st.session_state.line_settings[line_index]["pitch"] = pd["pitch"]
     st.session_state.line_settings[line_index]["slot"] = slot_id
-    st.session_state[f"v{line_index}"] = pd["voice"]
     st.session_state[f"r{line_index}"] = pd["rate"]
     st.session_state[f"p{line_index}"] = pd["pitch"]
 
@@ -184,6 +254,8 @@ def apply_preset_to_line_bulk(user_key, line_index, slot_id):
         "pitch": pd["pitch"],
         "slot": slot_id,
     }
+    st.session_state[f"r{line_index}"] = pd["rate"]
+    st.session_state[f"p{line_index}"] = pd["pitch"]
 
 async def gen_edge(text, voice, rate, pitch):
     rate_str = f"{rate:+d}%" if rate != 0 else "+0%"
@@ -242,14 +314,18 @@ def parse_srt(content):
 if st.query_params.get("view") == "admin":
     st.title("🔐 Admin Panel")
     pwd = st.text_input("Password", type="password")
-    if pwd == "admin123":
+    if pwd == "adminmc7":
         c1, c2 = st.columns(2)
         with c1:
             days = st.number_input("Days", 30)
             if st.button("Generate Key"):
                 k = "KHM-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
                 db = load_json(KEYS_FILE)
-                db[k] = {"duration_days": days, "activated_date": None, "status": "active"}
+                db[k] = {
+                    "duration_days": days,
+                    "activated_date": None,
+                    "status": "active",
+                }
                 save_json(KEYS_FILE, db)
                 st.success(f"New Key: {k}")
         with c2:
@@ -272,8 +348,9 @@ with c2:
         pass
 
 st.title("🇰🇭 Khmer AI Voice Pro (Edge)")
-cm = stx.CookieManager(key="mgr")
+st.markdown("<div id='page_top'></div>", unsafe_allow_html=True)
 
+cm = stx.CookieManager(key="mgr")
 if "auth" not in st.session_state:
     st.session_state.auth = False
 
@@ -297,9 +374,9 @@ if not st.session_state.auth:
     st.markdown("### 🔐 Login Required")
     with st.form("login"):
         key_input = st.text_input("Access Key", type="password")
-        c1, c2 = st.columns(2)
-        remember = c1.checkbox("Remember me", value=True)
-        force_login = c2.checkbox("Force Login (Kick others)")
+        c1l, c2l = st.columns(2)
+        remember = c1l.checkbox("Remember me", value=True)
+        force_login = c2l.checkbox("Force Login (Kick others)")
         btn = st.form_submit_button("Login", type="primary")
 
     if btn:
@@ -339,6 +416,18 @@ if st.session_state.auth:
         time.sleep(2)
         st.rerun()
 
+    # Floating scroll bar (center of browser)
+    st.markdown(
+        """
+        <div class="scroll-nav-global">
+            <a href="#page_top" class="scroll-btn">⬆️</a>
+            <a href="#le_editor" class="scroll-btn">🎯</a>
+            <a href="#page_bottom" class="scroll-btn">⬇️</a>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 # ==========================================
 # 3. MAIN APP
 # ==========================================
@@ -367,7 +456,11 @@ with st.sidebar:
     if "g_pitch" not in st.session_state:
         st.session_state.g_pitch = 0
 
-    v_sel = st.selectbox("Voice", list(VOICES.keys()), index=list(VOICES.keys()).index(st.session_state.g_voice))
+    v_sel = st.selectbox(
+        "Voice",
+        list(VOICES.keys()),
+        index=list(VOICES.keys()).index(st.session_state.g_voice)
+    )
     r_sel = st.slider("Speed", -50, 50, value=st.session_state.g_rate)
     p_sel = st.slider("Pitch", -50, 50, value=st.session_state.g_pitch)
     pad_sel = st.number_input("Padding (ms)", value=80)
@@ -379,23 +472,30 @@ with st.sidebar:
     st.subheader("💾 Presets (Save Here)")
     preset_name_input = st.text_input("Name", placeholder="Ex: Boy")
     for i in range(1, 7):
-        c1, c2 = st.columns([3, 1])
+        c1p, c2p = st.columns([3, 1])
         saved_p = get_user_preset(st.session_state.ukey, i)
         btn_name = saved_p["name"] if saved_p else f"Slot {i}"
-        with c1:
+        with c1p:
             if st.button(f"📂 {btn_name}", key=f"l{i}", use_container_width=True):
                 if saved_p:
                     st.session_state.g_voice = saved_p["voice"]
                     st.session_state.g_rate = saved_p["rate"]
                     st.session_state.g_pitch = saved_p["pitch"]
                     st.rerun()
-        with c2:
+        with c2p:
             if st.button("💾", key=f"s{i}", use_container_width=True):
                 data = {"voice": v_sel, "rate": r_sel, "pitch": p_sel}
                 save_user_preset(st.session_state.ukey, i, data, preset_name_input)
                 st.toast(f"Saved Slot {i}!")
                 time.sleep(0.5)
                 st.rerun()
+
+    st.divider()
+    st.subheader("📨 Contact")
+    st.markdown(
+        '<a class="tg-badge" href="https://t.me/menghakmc" target="_blank">Telegram : @menghakmc</a>',
+        unsafe_allow_html=True
+    )
 
 tab1, tab2 = st.tabs(["📝 Text Mode", "🎬 SRT Multi-Speaker"])
 
@@ -429,7 +529,6 @@ with tab2:
         if srt_file.size > 150 * 1024:
             st.error("⚠️ File too large! Max limit is 150KB.")
         else:
-            # -------- 1. Parse SRT once --------
             if "srt_lines" not in st.session_state or st.session_state.get("last_srt") != srt_file.name:
                 content = srt_file.getvalue().decode("utf-8")
                 st.session_state.srt_lines = parse_srt(content)
@@ -443,11 +542,11 @@ with tab2:
                     }
                     for _ in st.session_state.srt_lines
                 ]
+                # clear old R/P state
+                for k in list(st.session_state.keys()):
+                    if (k.startswith("r") or k.startswith("p")) and k[1:].isdigit():
+                        del st.session_state[k]
 
-            # -------- 2. Generate Full Audio button (on top) --------
-            gen_clicked = st.button("🚀 Generate Full Audio", type="primary")
-
-            # -------- 3. Apply preset to all --------
             st.markdown("#### 🎭 Apply Preset to All")
             preset_opts = ["-- Select --"] + [
                 f"Slot {i}: {get_user_preset(st.session_state.ukey, i).get('name', f'Slot {i}')}"
@@ -472,75 +571,90 @@ with tab2:
 
             st.divider()
             st.write("#### ✂️ Line Editor")
+            st.markdown("<div id='le_editor'></div>", unsafe_allow_html=True)
 
-            # -------- 4. Line Editor in scroll frame --------
-            with st.container(height=500, border=True):
+            # Frame with internal scroll
+            st.markdown("<div class='le-frame'>", unsafe_allow_html=True)
 
-                for idx in range(len(st.session_state.srt_lines)):
-                    sub = st.session_state.srt_lines[idx]
-                    cur = st.session_state.line_settings[idx]
-                    s   = cur["slot"]
+            for idx, sub in enumerate(st.session_state.srt_lines):
+                cur = st.session_state.line_settings[idx]
+                s = cur["slot"]
 
-                    border_color = (
-                        "#f97316" if s == 1 else
-                        "#22c55e" if s == 2 else
-                        "#3b82f6" if s == 3 else
-                        "#e11d48" if s == 4 else
-                        "#a855f7" if s == 5 else
-                        "#facc15" if s == 6 else
-                        "#64748b"
+                if f"r{idx}" not in st.session_state:
+                    st.session_state[f"r{idx}"] = cur["rate"]
+                if f"p{idx}" not in st.session_state:
+                    st.session_state[f"p{idx}"] = cur["pitch"]
+
+                border_color = (
+                    "#f97316" if s == 1 else
+                    "#22c55e" if s == 2 else
+                    "#3b82f6" if s == 3 else
+                    "#e11d48" if s == 4 else
+                    "#a855f7" if s == 5 else
+                    "#facc15" if s == 6 else
+                    "#64748b"
+                )
+
+                st.markdown(
+                    f"<div class='srt-container' style='border-left: 5px solid {border_color};'>",
+                    unsafe_allow_html=True
+                )
+
+                p_name = get_user_preset(st.session_state.ukey, s)['name'] if s else ""
+                st.markdown(
+                    f"""
+                    <div class='status-line'>
+                        <span><b>#{idx+1}</b> &nbsp; {sub['start']}ms</span>
+                        <span class='preset-badge'>{p_name}</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+                new_text = st.text_area(
+                    label=f"Line {idx+1} Text",
+                    value=sub.get("text", ""),
+                    key=f"txt_{idx}",
+                    height=80,
+                )
+                st.session_state.srt_lines[idx]["text"] = new_text
+
+                c_rate, c_pitch = st.columns(2)
+                r = c_rate.number_input(
+                    "R", -50, 50,
+                    key=f"r{idx}",
+                    value=st.session_state[f"r{idx}"]
+                )
+                p = c_pitch.number_input(
+                    "P", -50, 50,
+                    key=f"p{idx}",
+                    value=st.session_state[f"p{idx}"]
+                )
+                st.session_state.line_settings[idx]["rate"] = r
+                st.session_state.line_settings[idx]["pitch"] = p
+
+                st.markdown("<div style='margin-top:5px;'></div>", unsafe_allow_html=True)
+
+                cols = st.columns(6)
+                for i in range(1, 7):
+                    pd = get_user_preset(st.session_state.ukey, i)
+                    lbl = pd['name'][:5] if pd else str(i)
+                    kind = "primary" if s == i else "secondary"
+                    cols[i-1].button(
+                        lbl,
+                        key=f"b{idx}{i}",
+                        type=kind,
+                        on_click=apply_preset_to_line_callback,
+                        args=(st.session_state.ukey, idx, i),
                     )
 
-                    st.markdown(
-                        f"<div class='srt-container' style='border-left: 5px solid {border_color};'>",
-                        unsafe_allow_html=True
-                    )
+                st.markdown("</div>", unsafe_allow_html=True)
 
-                    p_name = get_user_preset(st.session_state.ukey, s)['name'] if s else ""
-                    st.markdown(
-                        f"""
-                        <div class='status-line'>
-                            <span><b>#{idx+1}</b> &nbsp; {sub['start']}ms</span>
-                            <span class='preset-badge'>{p_name}</span>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+            st.markdown("</div>", unsafe_allow_html=True)  # close le-frame
 
-                    # 🔥 LINE TEXT EDIT (នេះហើយដែលត្រូវលេច)
-                    new_text = st.text_area(
-                        label=f"Line {idx+1} Text",
-                        value=sub.get("text", ""),
-                        key=f"txt_{idx}",
-                        height=80,
-                    )
-                    st.session_state.srt_lines[idx]["text"] = new_text
+            # 🔽 Generate button moved UNDER Line Editor
+            gen_clicked = st.button("🚀 Generate Full Audio", type="primary")
 
-                    # R / P ជា number input (មិនមាន slider ទៀត)
-                    c_rate, c_pitch = st.columns(2)
-                    r = c_rate.number_input("R", -50, 50, value=int(cur["rate"]), key=f"r{idx}")
-                    p = c_pitch.number_input("P", -50, 50, value=int(cur["pitch"]), key=f"p{idx}")
-                    st.session_state.line_settings[idx]["rate"] = r
-                    st.session_state.line_settings[idx]["pitch"] = p
-
-                    st.markdown("<div style='margin-top:5px;'></div>", unsafe_allow_html=True)
-
-                    cols = st.columns(6)
-                    for i in range(1, 7):
-                        pd = get_user_preset(st.session_state.ukey, i)
-                        lbl = pd['name'][:5] if pd else str(i)
-                        kind = "primary" if s == i else "secondary"
-                        cols[i-1].button(
-                            lbl,
-                            key=f"b{idx}{i}",
-                            type=kind,
-                            on_click=apply_preset_to_line_callback,
-                            args=(st.session_state.ukey, idx, i),
-                        )
-
-                    st.markdown("</div>", unsafe_allow_html=True)
-
-            # -------- 5. Generate Full Audio logic --------
             if gen_clicked:
                 status = st.empty()
                 try:
@@ -575,9 +689,5 @@ with tab2:
                 except Exception as e:
                     status.error(f"Error: {e}")
 
-
-
-
-
-
-
+# anchor bottom page
+st.markdown("<div id='page_bottom'></div>", unsafe_allow_html=True)
